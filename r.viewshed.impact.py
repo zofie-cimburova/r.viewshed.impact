@@ -20,21 +20,28 @@ for details.
 #%module
 #% label: Visual impact of defined exposure source
 #% description: Computes visual impact of defined exposure source using weighted parametrised viewshed analysis
-##% keyword: raster
-##% keyword: viewshed
-##% keyword: line of sight
-##% keyword: LOS
-##% keyword: exposure
+#% keyword: raster
+#% keyword: viewshed
+#% keyword: line of sight
+#% keyword: LOS
+#% keyword: exposure
+#% keyword: impact
+#%end
+
+#%option G_OPT_V_INPUT
+#% key: exposure_source
+#% label: Name of input map of exposure source locations
+#% description: Name of input map of exposure source locations
+#%end
+
+#%option
+#% key: attribute
+#% description: Name of attribute column to store visual impact values
 #%end
 
 #%option G_OPT_R_INPUT
-#% key: trees
-#% description: Name of input map of tree locations
-#%end
-
-#%option G_OPT_R_INPUT
-#% key: private
-#% description: Name of input map of publically accessible areas
+#% key: weight
+#% description: Name of input weights raster map
 #%end
 
 #%option G_OPT_R_INPUT
@@ -42,11 +49,11 @@ for details.
 #% description: Name of input digital surface raster map
 #%end
 
-##%flag
-##% key: c
-##% description: Consider the curvature of the earth (current ellipsoid)
-##% guisection: Viewshed settings
-##%end
+#%flag
+#% key: c
+#% description: Consider the curvature of the earth (current ellipsoid)
+#% guisection: Viewshed settings
+#%end
 
 #%option
 #% key: observer_elevation
@@ -68,64 +75,64 @@ for details.
 #% guisection: Viewshed settings
 #%end
 
-##%option
-##% key: approach
-##% type: string
-##% required: no
-##% options: binary, distance_decay, fuzzy_viewshed, vertical_angle, solid_angle
-##% key_desc: name
-##% description: Approach for viewshed parametrisation
-##% guisection: Viewshed settings
-##% answer: binary
-##%end
+#%option
+#% key: approach
+#% type: string
+#% required: no
+#% options: binary, distance_decay, fuzzy_viewshed, vertical_angle, solid_angle
+#% key_desc: name
+#% description: Approach for viewshed parametrisation
+#% guisection: Viewshed settings
+#% answer: binary
+#%end
 
-##%option
-##% key: b1_distance
-##% type: double
-##% required: no
-##% key_desc: value
-##% description: Radius around the viewpoint where clarity is perfect. Used in fuzzy viewshed approach.
-##% guisection: Viewshed settings
-##% answer: 10
-##%end
+#%option
+#% key: b1_distance
+#% type: double
+#% required: no
+#% key_desc: value
+#% description: Radius around the viewpoint where clarity is perfect. Used in fuzzy viewshed approach.
+#% guisection: Viewshed settings
+#% answer: 10
+#%end
 
-##%option
-##% key: sample_density
-##% type: double
-##% required: no
-##% options: 0.0-100.0
-##% key_desc: value
-##% description: Density of sampling points
-##% guisection: Sampling settings
-##% answer: 30
-##%end
+#%option
+#% key: sample_density
+#% type: double
+#% required: no
+#% options: 0.0-100.0
+#% key_desc: value
+#% description: Density of sampling points
+#% guisection: Sampling settings
+#% answer: 30
+#%end
 
-##%option
-##% key: seed
-##% type: integer
-##% required: no
-##% options: 0-
-##% key_desc: value
-##% description: Random seed, default [random]
-##% guisection: Sampling settings
-##%end
+#%option
+#% key: seed
+#% type: integer
+#% required: no
+#% options: 0-
+#% key_desc: value
+#% description: Random seed, default [random]
+#% guisection: Sampling settings
+#%end
 
-##%flag
-##% key: r
-##% description: Consider the effect of atmospheric refraction
-##% guisection: Refraction
-##%end
+#%flag
+#% key: r
+#% description: Consider the effect of atmospheric refraction
+#% guisection: Refraction
+#%end
 
-##%option
-##% key: refraction_coeff
-##% type: double
-##% required: no
-##% key_desc: value
-##% options: 0.0-1.0
-##% description: Refraction coefficient
-##% answer: 0.14286
-##% guisection: Refraction
-##%end
+#%option
+#% key: refraction_coeff
+#% type: double
+#% required: no
+#% key_desc: value
+#% options: 0.0-1.0
+#% description: Refraction coefficient
+#% answer: 0.14286
+#% guisection: Refraction
+#%end
 
 #%option
 #% key: memory
@@ -160,6 +167,8 @@ from grass.pygrass.raster import numpy2raster
 
 from grass.pygrass.gis.region import Region
 from grass.pygrass.vector.basic import Bbox
+from grass.pygrass.vector import VectorTopo
+
 
 import grass.script as grass
 from grass.script import utils as grassutils
@@ -872,49 +881,42 @@ def main():
     # ==========================================================================
     # Input data
     # ==========================================================================
-    ## Required
+    ## DSM
     global R_DSM
     R_DSM = options['dsm']
-    r_output = options['output']
 
     # test if exist
     gfile_dsm = grass.find_file(name=R_DSM, element='cell')
     if not gfile_dsm['file']:
         grass.fatal('Raster map <%s> not found' % R_DSM)
 
-    ## Exposure settings
-    v_source = options['sampling_points'] #TODO how to check that it's a point map?
-    r_source = options['source']
-    source_cat = options['sourcecat']
-    r_weights = options['weights']
+    ## Exposure source
+    sources = options['exposure_source'].split("@")[0] #TODO how to check that it's a polygon map?
 
     # test if exist
-    if v_source:
-        gfile_vsource = grass.find_file(name=v_source, element='vector')
-        if not gfile_vsource['file']:
-            grass.fatal('Vector map <%s> not found' % v_source)
+    if sources:
+        gfile_source = grass.find_file(name=sources, element='vector')
+        if not gfile_source['file']:
+            grass.fatal('Vector map <%s> not found' % sources)
 
-    if r_source:
-        gfile_rsource = grass.find_file(name=r_source, element='cell')
-        if not gfile_rsource['file']:
-            grass.fatal('Raster map <%s> not found' % r_source)
+    v_sources = VectorTopo(sources)
+    v_sources.open('r')
+    no_sources = v_sources.num_primitive_of('area')
 
-        # if source_cat is set - check that r_source is CELL
-        source_datatype = grass.parse_command(
-                            'r.info',
-                            map=r_source,
-                            flags='g'
-                            )['datatype']
-        if source_cat != '*' and source_datatype != 'CELL':
-            grass.fatal(
-                'The raster map <%s> must be integer (CELL type)  in order to use the \'sourcecat\' parameter'
-                % r_source
-            )
+    ## Attribute to store visual impact values
+    attr_vi = options['attribute']
 
-    if r_weights:
-        gfile_weights = grass.find_file(name=r_weights, element='cell')
-        if not gfile_weights['file']:
-            grass.fatal('Raster map <%s> not found' % r_weights)
+    if attr_vi in v_sources[1].attrs.keys(): # TODO how to check if attribute already exists?
+        grass.fatal('Attribute <%s> already exists' % attr_vi)
+    else:
+        grass.run_command(
+            'v.db.addcolumn',
+            map=sources,
+            columns='{} {}'.format(attr_vi, 'double'))
+
+    ## Weights
+    r_weights = options['weight']
+
 
     ## Viewshed settings
     global FLAGSTRING
@@ -996,42 +998,43 @@ def main():
         multiplicate = math.floor(max_dist_inf / NSRES)
         MAX_DIST = multiplicate * NSRES
 
+    # # ==========================================================================
+    # # Random sample exposure source with source points T
+    # # ==========================================================================
+    # # TODO if v_sources is points map - use instead of sampling?
+    # # if v_sources:
+    # #     # go for using input vector map as sampling points
+    # #     v_sources_sample = v_sources
+    # #     grass.verbose("Using sampling points from input vector map")
+    #
+    # # else:
+    # ## go for sampling
+    #
+    # univar = grass.read_command(
+    #             'r.univar',
+    #             map=r_source
+    #         )
+    # source_ncells = int(univar.split('\n')[5].split(':')[1])
+    #
+    # # number of cells in sample
+    # sample_ncells = int(float(source_sample_density) * source_ncells / 100)
+    # grass.verbose("{} source points".format(source_ncells))
+    #
+    # if sample_ncells == 0:
+    #     grass.fatal('The analysis cannot be conducted for 0 sampling points.')
+    # else:
+    #     grass.verbose("Distributing {} sampling points".format(sample_ncells))
+    #
+    # # min. distance between samples set to region resolution
+    # sample_distance = NSRES
+    #
+    # v_sources_sample = sample_raster_with_points(
+    #     r_source, source_cat, sample_ncells, sample_distance, 'tmp_rand_pts_vect', seed
+    # )
+    # TMP_VECT.append(v_sources_sample)
+
     # ==========================================================================
-    # Random sample exposure source with target points T
-    # ==========================================================================
-    if v_source:
-        # go for using input vector map as sampling points
-        v_source_sample = v_source
-        grass.verbose("Using sampling points from input vector map")
-
-    else:
-        # go for sampling
-        # number of non-null cells (cells to sample from)
-        univar = grass.read_command(
-                    'r.univar',
-                    map=r_source
-                )
-        source_ncells = int(univar.split('\n')[5].split(':')[1])
-
-        # number of cells in sample
-        sample_ncells = int(float(source_sample_density) * source_ncells / 100)
-        grass.verbose("{} source points".format(source_ncells))
-
-        if sample_ncells == 0:
-            grass.fatal('The analysis cannot be conducted for 0 sampling points.')
-        else:
-            grass.verbose("Distributing {} sampling points".format(sample_ncells))
-
-        # min. distance between samples set to region resolution
-        sample_distance = NSRES
-
-        v_source_sample = sample_raster_with_points(
-            r_source, source_cat, sample_ncells, sample_distance, 'tmp_rand_pts_vect', seed
-        )
-        TMP_VECT.append(v_source_sample)
-
-    # ==========================================================================
-    # Get coordinates and attributes of target points T
+    # Prepare maps for viewshed parametrisation
     # ==========================================================================
     ## Prepare a list of maps to extract attributes from
     # DSM values
@@ -1137,57 +1140,58 @@ def main():
         attr_map_list.extend([r_dz_dew, r_dz_dns])
         TMP_RAST.extend([r_dz_dew, r_dz_dns])
 
-    ## Use viewshed weights if provided
-    if r_weights:
-        attr_map_list.append(r_weights)
+    # ## Use viewshed weights if provided
+    # if r_weights:
+    #     attr_map_list.append(r_weights)
 
-    ## Extract attribute values
-    target_pts_grass = grass.read_command(
-        'r.what',
-        flags='v',
-        map=attr_map_list,
-        points=v_source_sample,
-        separator='|',
-        null_value='*'
-    )
+    # ## Extract attribute values
+    # target_pts_grass = grass.read_command(
+    #     'r.what',
+    #     flags='v',
+    #     map=attr_map_list,
+    #     points=v_sources_sample,
+    #     separator='|',
+    #     null_value='*'
+    # )
 
     # columns to use depending on parametrisation method
     usecols = list(range(0, 4 + len(attr_map_list)))
     usecols.remove(3) # skip 3rd column - site_name
 
-    # convert coordinates and attributes of target points T to numpy array
-    target_pts_np = txt2numpy(
-        target_pts_grass, sep='|', names=None, null_value='*', usecols=usecols, structured=False
-    )
+    # # convert coordinates and attributes of target points T to numpy array
+    # target_pts_np = txt2numpy(
+    #     target_pts_grass, sep='|', names=None, null_value='*', usecols=usecols, structured=False
+    # )
 
-    # if one point only - 0D array which cannot be used in iteration
-    if target_pts_np.ndim == 1:
-        target_pts_np = target_pts_np.reshape(1, -1)
-    no_points = target_pts_np.shape[0]
-
-    # if viewshed weights not set by flag - set weight to 1 for all pts
-    if not r_weights:
-        weights_np = np.ones((no_points, 1))
-        target_pts_np = np.hstack((target_pts_np, weights_np))
-
-    grass.message("target_pts_np: {}".format(target_pts_np))
+    # # if one point only - 0D array which cannot be used in iteration
+    # if target_pts_np.ndim == 1:
+    #     target_pts_np = target_pts_np.reshape(1, -1)
+    # no_points = target_pts_np.shape[0]
+    #
+    # # if viewshed weights not set by flag - set weight to 1 for all pts
+    # if not r_weights:
+    #     weights_np = np.ones((no_points, 1))
+    #     target_pts_np = np.hstack((target_pts_np, weights_np))
+    #
+    # grass.message("target_pts_np: {}".format(target_pts_np))
 
     # ==========================================================================
-    # Calculate weighted parametrised cummulative viewshed
-    # by iterating over target points T
+    # Iterate over exposure source polygons
+    # and calculate their visual impact
+    # using weighted cumulative parametrised viewshed
     # ==========================================================================
     # counter to print progress in percentage
     counter = 0
 
-    # 2D numpy array to store the partial cummulative viewsheds
-    global NP_CUM
-    NP_CUM = np.empty((gl_reg_rows, gl_reg_cols), dtype=np.single)
-    NP_CUM[:] = np.nan
+    # # 2D numpy array to store the partial cummulative viewsheds
+    # global NP_CUM
+    # NP_CUM = np.empty((gl_reg_rows, gl_reg_cols), dtype=np.single)
+    # NP_CUM[:] = np.nan
 
-    # random name of binary viewshed
-    global R_VIEWSHED
-    R_VIEWSHED = grass.tempname(6)
-    TMP_RAST.append(R_VIEWSHED)
+    # # random name of binary viewshed
+    # global R_VIEWSHED
+    # R_VIEWSHED = grass.tempname(6)
+    # TMP_RAST.append(R_VIEWSHED)
 
     # parametrisation function
     global PARAMETRISE_VIEWSHED
@@ -1207,29 +1211,32 @@ def main():
         PARAMETRISE_VIEWSHED = binary
 
     start_2 = time.time()
-    grass.verbose(_('Calculating partial viewsheds...'))
+    grass.verbose(_('Iterating over trees...'))
 
-    for target_pnt in target_pts_np:
-
+    for v_source in v_sources.viter('areas'):
         ## Display a progress info message
-        grass.percent(counter, no_points, 1)
-        grass.verbose(
-            'Processing point {i} ({p:.1%})'.format(i=int(target_pnt[0]), p=counter / no_points)
-        )
+        grass.percent(counter, no_sources, 1)
 
-        ## Global coordinates and attributes of target point T
-        t_glob = target_pnt[1:]
+        ## Only process features which have attribute table
+        if v_source.attrs is None:
+            grass.verbose("Problem") #TODO what are the features without attributes?
 
-        grass.message("t_glob[2]: {}".format(t_glob[2]))
-        if math.isnan(t_glob[-1]) or t_glob[-1] == 0.0:
-            # if weight is NaN or 0 - continue #TODO replace NaN in np.cum with 0?
-            continue
-        elif math.isnan(t_glob[2]):
-            # if height of target point T is NaN
-            continue
         else:
-            ## Calculate partial cummulative viewshed
-            NP_CUM = do_it_all(t_glob)
+            source_id = v_source.attrs['CrownID']
+            grass.verbose('Processing exposure source ID: {}'.format(source_id))
+
+            ## Create random points
+            # TODO how to do that? I.e. what module?
+            # TODO when to do that? I.e. for each tree separately, or at the beginning once for all trees?
+
+            ## Calculate parametrised viewshed
+            # TODO reuse functions from r.viewshed.exposure - or insert finished module?
+
+            ## Multiply by weights
+            # TODO
+
+            ## Summarise
+            # TODO
 
         counter += 1
 
@@ -1254,11 +1261,11 @@ def main():
     REG.set_current()
     REG.set_raster_region()
 
-    ## Convert numpy array of cummulative viewshed to raster
-    numpy2raster(NP_CUM, mtype='FCELL', rastname=r_output, overwrite=True)
+    # ## Convert numpy array of cummulative viewshed to raster
+    # numpy2raster(NP_CUM, mtype='FCELL', rastname=r_output, overwrite=True)
 
-    ## Set raster history to output raster
-    grass.raster_history(r_output)
+    ## Close vector access
+    v_sources.close()
 
     return
 
