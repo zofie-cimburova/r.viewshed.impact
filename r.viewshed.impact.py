@@ -50,6 +50,11 @@ for details.
 #%end
 
 #%flag
+#% key: g
+#% description: Exposure source dimensions influence visibility impact
+#%end
+
+#%flag
 #% key: c
 #% description: Consider the curvature of the earth (current ellipsoid)
 #% guisection: Viewshed settings
@@ -168,6 +173,7 @@ from grass.pygrass.raster import numpy2raster
 from grass.pygrass.gis.region import Region
 from grass.pygrass.vector.basic import Bbox
 from grass.pygrass.vector import VectorTopo
+from grass.pygrass.modules import Module
 
 
 import grass.script as grass
@@ -233,288 +239,6 @@ def clean_temp():
     gisbase = os.environ['GISBASE']
     call([os.path.join(gisbase, 'etc', 'clean_temp')], stdout=nul)
     nul.close()
-
-
-def do_it_all(t_glob):
-    """Conduct weighted and parametrised partial viewshed and cummulate it with
-    the previous partial viewsheds
-    :param T_gloc: Array of target point coordinates in global coordinate system
-    :type t_glob: ndarray
-    :param R_DSM: Name of digital surface model raster
-    :type R_DSM: string
-    :param V_ELEVATION: Observer elevation above the ground
-    :type V_ELEVATION: float
-    :param NSRES: Cell resolution in N-S direction
-    :type NSRES: float
-    :param EWRES: Cell resolution in E-W direction
-    :type EWRES: float
-    :param MAX_DIST: Maximum viewshed distance
-    :type MAX_DIST: float
-    :param GL_REG_N: North coordinate of global region
-    :type GL_REG_N: float
-    :param GL_REG_S: South coordinate of global region
-    :type GL_REG_S: float
-    :param GL_REG_E: East coordinate of global region
-    :type GL_REG_E: float
-    :param GL_REG_W: West coordinate of global region
-    :type GL_REG_W: float
-    :param FLAGSTRING: String of flags for r.viewshed
-    :type FLAGSTRING: string
-    :param R_VIEWSHED: Constant name of binary viewshed
-    :type R_VIEWSHED: string
-    :param REFR_COEFF: Refraction coefficient
-    :type REFR_COEFF: float
-    :param MEMORY: Amount of memory to use
-    :type MEMORY: int
-    :return: 2D array of weighted parametrised cummulative viewshed
-    :rtype: ndarray
-    """
-    # ==========================================================================
-    # 1. Set local computational region: +/- MAX_DIST from target point
-    # ==========================================================================
-    # ensure that local region doesn't exceed global region
-    loc_reg_n = min(t_glob[1] + MAX_DIST + NSRES / 2, GL_REG_N)
-    loc_reg_s = max(t_glob[1] - MAX_DIST - NSRES / 2, GL_REG_S)
-    loc_reg_e = min(t_glob[0] + MAX_DIST + EWRES / 2, GL_REG_E)
-    loc_reg_w = max(t_glob[0] - MAX_DIST - EWRES / 2, GL_REG_W)
-
-    # pygrass sets region for pygrass tasks
-    bbox = Bbox(loc_reg_n, loc_reg_s, loc_reg_e, loc_reg_w)
-    REG.set_bbox(bbox)
-    REG.set_raster_region()
-
-    # gsl sets region for gsl tasks
-    grass.run_command(
-        'g.region',
-        n=loc_reg_n,
-        s=loc_reg_s,
-        e=loc_reg_e,
-        w=loc_reg_w
-    )
-
-    lreg_shape = [REG.rows, REG.cols]
-
-    # ==========================================================================
-    # 2. Calculate binary viewshed and convert to numpy
-    # ==========================================================================
-    grass.run_command(
-        'r.viewshed',
-        flags='b' + FLAGSTRING,
-        input=R_DSM,
-        output=R_VIEWSHED,
-        coordinates='{},{}'.format(t_glob[0], t_glob[1]),
-        observer_elevation=0.0,
-        target_elevation=V_ELEVATION,
-        max_distance=MAX_DIST,
-        refraction_coeff=REFR_COEFF,
-        memory=MEMORY,
-        quiet=True,
-        overwrite=True
-    )
-
-    np_viewshed = raster2numpy(R_VIEWSHED)
-
-    # ==========================================================================
-    # 3. Prepare local coordinates and attributes of target point T
-    # ==========================================================================
-    # Calculate how much of rows/cols of local region lies outside global region
-    o_1 = [
-        max(t_glob[1] + MAX_DIST + NSRES / 2 - GL_REG_N, 0),
-        max(GL_REG_W - (t_glob[0] - MAX_DIST - EWRES / 2), 0)
-    ]
-
-    t_loc = np.append(
-        np.array(
-            [
-                MAX_DIST / NSRES + 0.5 - o_1[0] / NSRES,
-                MAX_DIST / EWRES + 0.5 - o_1[1] / EWRES
-            ]
-        ),
-        t_glob[2:]
-    )
-
-    # ==========================================================================
-    # 4. Parametrise viewshed
-    # ==========================================================================
-    np_viewshed_param = PARAMETRISE_VIEWSHED(lreg_shape, t_loc, np_viewshed)
-
-    # ==========================================================================
-    # 5. Cummulate viewsheds
-    # ==========================================================================
-    ## Determine position of local parametrised viewshed within
-    # global cummulative viewshed
-    o_2 = [
-        int(round((GL_REG_N - loc_reg_n) / NSRES)),  # NS (rows)
-        int(round((loc_reg_w - GL_REG_W) / EWRES)),  # EW (cols)
-    ]
-
-    ## Add local parametrised viewshed to global cummulative viewshed
-    # replace nans with 0 in processed regions
-    NP_CUM[o_2[0] : o_2[0] + lreg_shape[0], o_2[1] : o_2[1] + lreg_shape[1]] = np.nan_to_num(
-        NP_CUM[o_2[0] : o_2[0] + lreg_shape[0], o_2[1] : o_2[1] + lreg_shape[1]]
-    )
-
-    NP_CUM[o_2[0] : o_2[0] + lreg_shape[0], o_2[1] : o_2[1] + lreg_shape[1]] += np_viewshed_param
-
-    ## Clean /.tmp dataset
-    # has to be cleaned in loop, otherwise takes time at the end of session
-    clean_temp()
-
-    return NP_CUM
-
-
-def binary(lreg_shape, t_loc, np_viewshed):
-    """Weight binary viewshed by constant weight
-    :param lreg_shape: Dimensions of local computational region
-    :type lreg_shape: list
-    :param t_loc: Array of target point coordinates in local coordinate system
-    :type t_loc: ndarray
-    :param np_viewshed: 2D array of binary viewshed
-    :type np_viewshed: ndarray
-    :return: 2D array of weighted viewshed
-    :rtype: ndarray
-    """
-    weight = t_loc[-1]
-    np_viewshed_param = np_viewshed * weight
-
-    return np_viewshed_param
-
-
-def solid_angle_reverse(lreg_shape, t_loc, np_viewshed):
-    """Calculate solid angle from viewpoints to target based on
-    Domingo-Santos et al. (2011) and use it to parametrise binary viewshed
-    :param lreg_shape: Dimensions of local computational region
-    :type lreg_shape: list
-    :param t_loc: Array of target point coordinates in local coordinate system
-    :type t_loc: ndarray
-    :param np_viewshed: 2D array of binary viewshed
-    :type np_viewshed: ndarray
-    :param R_DSM: Name of digital surface model raster
-    :type R_DSM: string
-    :param V_ELEVATION: Observer elevation above the ground
-    :type V_ELEVATION: float
-    :param NSRES: Cell resolution in N-S direction
-    :type NSRES: float
-    :param EWRES: Cell resolution in E-W direction
-    :type EWRES: float
-    :return: 2D array of weighted parametrised viewshed
-    :rtype: ndarray
-    """
-    # 1. Convert DSM to numpy
-    np_dsm = raster2numpy(R_DSM)
-
-    # Ensure that values are represented as float (in case of CELL
-    # data type) and replace integer NaN with numpy NaN
-    dsm_dtype = grass.parse_command('r.info',
-                                    map=R_DSM,
-                                    flags='g'
-                                    )['datatype']
-    if dsm_dtype == 'CELL':
-        np_dsm = np_dsm.astype(np.float32)
-        np_dsm[np_dsm == -2147483648] = np.nan
-
-    # 2. local row, col coordinates and global Z coordinate of observer points V
-    #    3D array (lreg_shape[0] x lreg_shape[1] x 3)
-    v_loc = np.array(
-        [
-            np.tile(
-                np.arange(0.5, lreg_shape[0] + 0.5).reshape(-1, 1), (1, lreg_shape[1])),
-            np.tile(
-                np.arange(0.5, lreg_shape[1] + 0.5).reshape(-1, 1).transpose(), (lreg_shape[0], 1)
-            ),
-            np_dsm + V_ELEVATION,
-        ]
-    )
-
-    # 3. local row, col coordinates and global Z coordinate of points A, B, C, D
-    #    1D array [row, col, Z]
-    a_loc = np.array([t_loc[0] + 0.5, t_loc[1] - 0.5, t_loc[3]])
-
-    b_loc = np.array([t_loc[0] - 0.5, t_loc[1] - 0.5, t_loc[4]])
-
-    c_loc = np.array([t_loc[0] - 0.5, t_loc[1] + 0.5, t_loc[5]])
-
-    d_loc = np.array([t_loc[0] + 0.5, t_loc[1] + 0.5, t_loc[6]])
-
-    # 4. vectors a, b, c, d, adjusted for cell size
-    #    3D array (lreg_shape[0] x lreg_shape[1] x 3)
-    a_vect = np.array(
-        [
-            (v_loc[0] - a_loc[0]) * NSRES,
-            (v_loc[1] - a_loc[1]) * EWRES,
-            (v_loc[2] - a_loc[2])
-        ]
-    )
-
-    b_vect = np.array(
-        [
-            (v_loc[0] - b_loc[0]) * NSRES,
-            (v_loc[1] - b_loc[1]) * EWRES,
-            (v_loc[2] - b_loc[2])
-        ]
-    )
-
-    c_vect = np.array(
-        [
-            (v_loc[0] - c_loc[0]) * NSRES,
-            (v_loc[1] - c_loc[1]) * EWRES,
-            (v_loc[2] - c_loc[2])
-        ]
-    )
-
-    d_vect = np.array(
-        [
-            (v_loc[0] - d_loc[0]) * NSRES,
-            (v_loc[1] - d_loc[1]) * EWRES,
-            (v_loc[2] - d_loc[2])
-        ]
-    )
-
-    # 5. sizes of vectors a, b, c, d
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    a_scal = np.sqrt(a_vect[0] ** 2 + a_vect[1] ** 2 + a_vect[2] ** 2)
-    b_scal = np.sqrt(b_vect[0] ** 2 + b_vect[1] ** 2 + b_vect[2] ** 2)
-    c_scal = np.sqrt(c_vect[0] ** 2 + c_vect[1] ** 2 + c_vect[2] ** 2)
-    d_scal = np.sqrt(d_vect[0] ** 2 + d_vect[1] ** 2 + d_vect[2] ** 2)
-
-    # 6. scalar products ab, ac, bc, ad, dc
-    #    2D arrays (lreg_shape[0] x lreg_shape[1])
-    ab_scal = sum(a_vect * b_vect)
-    ac_scal = sum(a_vect * c_vect)
-    bc_scal = sum(b_vect * c_vect)
-    ad_scal = sum(a_vect * d_vect)
-    dc_scal = sum(d_vect * c_vect)
-
-    # 7. determinants of matrix abc, adc
-    #    2D arrays (lreg_shape[0] x lreg_shape[1])
-    det_abc = (
-        a_vect[0] * (b_vect[1] * c_vect[2] - b_vect[2] * c_vect[1])
-        - b_vect[0] * (a_vect[1] * c_vect[2] - a_vect[2] * c_vect[1])
-        + c_vect[0] * (a_vect[1] * b_vect[2] - a_vect[2] * b_vect[1])
-    )
-
-    det_adc = (
-        a_vect[0] * (d_vect[1] * c_vect[2] - d_vect[2] * c_vect[1])
-        - d_vect[0] * (a_vect[1] * c_vect[2] - a_vect[2] * c_vect[1])
-        + c_vect[0] * (a_vect[1] * d_vect[2] - a_vect[2] * d_vect[1])
-    )
-
-    # 8. solid angle
-    solid_angle_1 = np.arctan2(
-        det_abc, a_scal * b_scal * c_scal + ab_scal * c_scal + ac_scal * b_scal + bc_scal * a_scal
-    )
-
-    solid_angle_2 = np.arctan2(
-        det_adc, a_scal * d_scal * c_scal + ad_scal * c_scal + ac_scal * d_scal + dc_scal * a_scal
-    )
-
-    solid_angle = np.absolute(solid_angle_1) + np.absolute(solid_angle_2)
-
-    # 9. Multiply solid angle by binary viewshed and weight
-    weight = t_loc[-1]
-    np_viewshed_param = solid_angle * np_viewshed * weight
-
-    return np_viewshed_param
 
 
 def distance_decay_reverse(lreg_shape, t_loc, np_viewshed):
@@ -630,106 +354,6 @@ def fuzzy_viewshed_reverse(lreg_shape, t_loc, np_viewshed):
     # 5. Multiply fuzzy viewshed by binary viewshed and weight
     weight = t_loc[-1]
     np_viewshed_param = fuzzy_viewshed * np_viewshed * weight
-
-    return np_viewshed_param
-
-
-def vertical_angle_reverse(lreg_shape, t_loc, np_viewshed):
-    """Calculate vertical angle from viewpoints to target based on
-    Chamberlain (2011) and Chamberlain & Meither (2013) and use it to
-    parametrise binary viewshed
-    :param lreg_shape: Dimensions of local computational region
-    :type lreg_shape: list
-    :param t_loc: Array of target point coordinates in local coordinate system
-    :type t_loc: ndarray
-    :param np_viewshed: 2D array of binary viewshed
-    :type np_viewshed: ndarray
-    :param R_DSM: Name of digital surface model raster
-    :type R_DSM: string
-    :param V_ELEVATION: Observer elevation above the ground
-    :type V_ELEVATION: float
-    :param NSRES: Cell resolution in N-S direction
-    :type NSRES: float
-    :param EWRES: Cell resolution in E-W direction
-    :type EWRES: float
-    :return: 2D array of weighted parametrised viewshed
-    :rtype: ndarray
-    """
-    # 1. Convert DSM to numpy
-    np_dsm = raster2numpy(R_DSM)
-
-    # Ensure that values are represented as float (in case of CELL
-    # data type) and replace integer NaN with numpy NaN
-    dsm_dtype = grass.parse_command(
-                    'r.info',
-                    map=R_DSM,
-                    flags='g'
-                    )['datatype']
-    if dsm_dtype == 'CELL':
-        np_dsm = np_dsm.astype(np.float32)
-        np_dsm[np_dsm == -2147483648] = np.nan
-
-    # 2. local row, col coordinates and global Z coordinate of observer points V
-    #    3D array (lreg_shape[0] x lreg_shape[1] x 3)
-    v_loc = np.array(
-        [
-            np.tile(
-                np.arange(0.5, lreg_shape[0] + 0.5).reshape(-1, 1), (1, lreg_shape[1])
-            ),
-            np.tile(
-                np.arange(0.5, lreg_shape[1] + 0.5).reshape(-1, 1).transpose(), (lreg_shape[0], 1)
-            ),
-            np_dsm + V_ELEVATION,
-        ]
-    )
-
-    # 3. vector VT, adjusted for cell size
-    #    3D array (lreg_shape[0] x lreg_shape[1] x 3)
-    v_vect = np.array(
-        [
-            (v_loc[0] - t_loc[0]) * NSRES,
-            (v_loc[1] - t_loc[1]) * EWRES,
-            (v_loc[2] - t_loc[2])
-        ]
-    )
-
-    # 4. projection of vector VT to XZ and YZ plane, adjusted for cell size
-    v_vect_ns = np.array([(v_loc[0] - t_loc[0]) * NSRES, v_loc[2] - t_loc[2]])
-    v_vect_ew = np.array([(v_loc[1] - t_loc[1]) * EWRES, v_loc[2] - t_loc[2]])
-
-    v_vect_ns_unit = v_vect_ns / np.linalg.norm(v_vect_ns, axis=0)
-    v_vect_ew_unit = v_vect_ew / np.linalg.norm(v_vect_ew, axis=0)
-
-    # 5. size of vector VT
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    v_scal = np.sqrt(v_vect[0] ** 2 + v_vect[1] ** 2 + v_vect[2] ** 2)
-
-    # 6. vector n, its projection to XZ, YZ plane
-    #   1D array [X, Z], [Y, Z]
-    n_vect_ns = [1, -t_loc[4]]
-    n_vect_ew = [1, t_loc[3]]
-
-    n_vect_ns_unit = n_vect_ns / np.linalg.norm(n_vect_ns, axis=0)
-    n_vect_ew_unit = n_vect_ew / np.linalg.norm(n_vect_ew, axis=0)
-
-    # 7. angles beta (ns), theta (ew) (0-90 degrees)
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    beta = np.arccos(
-        n_vect_ns_unit[0] * v_vect_ns_unit[:][0] + n_vect_ns_unit[1] * v_vect_ns_unit[:][1]
-    )
-    beta = np.where(beta > math.pi / 2, beta - math.pi / 2, beta)
-
-    theta = np.arccos(
-        n_vect_ew_unit[0] * v_vect_ew_unit[:][0] + n_vect_ew_unit[1] * v_vect_ew_unit[:][1]
-    )
-    theta = np.where(theta > math.pi / 2, theta - math.pi / 2, theta)
-
-    # 8. vertical angle adjusted for distance weight
-    vertical_angle = np.cos(beta) * np.cos(theta) * ((NSRES * EWRES) / v_scal ** 2)
-
-    # 9. Multiply vertical angle by binary viewshed and weight
-    weight = t_loc[-1]
-    np_viewshed_param = vertical_angle * np_viewshed * weight
 
     return np_viewshed_param
 
@@ -900,8 +524,16 @@ def main():
             grass.fatal('Vector map <%s> not found' % sources)
 
     v_sources = VectorTopo(sources)
-    v_sources.open('r')
+    v_sources.open('rw')
     no_sources = v_sources.num_primitive_of('area')
+
+    ## Weights
+    r_weights = options['weight']
+
+    use_weights = 0
+    gfile_weights = grass.find_file(name=r_weights, element='cell')
+    if gfile_weights['file']:
+        use_weights = 1
 
     ## Attribute to store visual impact values
     attr_vi = options['attribute']
@@ -913,10 +545,6 @@ def main():
             'v.db.addcolumn',
             map=sources,
             columns='{} {}'.format(attr_vi, 'double'))
-
-    ## Weights
-    r_weights = options['weight']
-
 
     ## Viewshed settings
     global FLAGSTRING
@@ -998,182 +626,10 @@ def main():
         multiplicate = math.floor(max_dist_inf / NSRES)
         MAX_DIST = multiplicate * NSRES
 
-    # # ==========================================================================
-    # # Random sample exposure source with source points T
-    # # ==========================================================================
-    # # TODO if v_sources is points map - use instead of sampling?
-    # # if v_sources:
-    # #     # go for using input vector map as sampling points
-    # #     v_sources_sample = v_sources
-    # #     grass.verbose("Using sampling points from input vector map")
-    #
-    # # else:
-    # ## go for sampling
-    #
-    # univar = grass.read_command(
-    #             'r.univar',
-    #             map=r_source
-    #         )
-    # source_ncells = int(univar.split('\n')[5].split(':')[1])
-    #
-    # # number of cells in sample
-    # sample_ncells = int(float(source_sample_density) * source_ncells / 100)
-    # grass.verbose("{} source points".format(source_ncells))
-    #
-    # if sample_ncells == 0:
-    #     grass.fatal('The analysis cannot be conducted for 0 sampling points.')
-    # else:
-    #     grass.verbose("Distributing {} sampling points".format(sample_ncells))
-    #
-    # # min. distance between samples set to region resolution
-    # sample_distance = NSRES
-    #
-    # v_sources_sample = sample_raster_with_points(
-    #     r_source, source_cat, sample_ncells, sample_distance, 'tmp_rand_pts_vect', seed
-    # )
-    # TMP_VECT.append(v_sources_sample)
-
     # ==========================================================================
-    # Prepare maps for viewshed parametrisation
+    # Random sample exposure source with source points T
     # ==========================================================================
-    ## Prepare a list of maps to extract attributes from
-    # DSM values
-    attr_map_list = [R_DSM]
-
-    ## Precompute values A, B, C, D for solid angle approach
-    # using moving window [row, col]
-    if approach == 'solid_angle':
-
-        r_a_z = 'tmp_A_z'
-        r_b_z = 'tmp_B_z'
-        r_c_z = 'tmp_C_z'
-        r_d_z = 'tmp_D_z'
-
-        expr = ';'.join(
-            [
-            '$outmap_A = (if(isnull($inmap[0,0]), 0, $inmap[0, 0]) + \
-                          if(isnull($inmap[0,-1]), 0, $inmap[0, -1]) + \
-                          if(isnull($inmap[1, -1]), 0, $inmap[1, -1]) + \
-                          if(isnull($inmap[1, 0]), 0, $inmap[1, 0])) / \
-                          (!isnull($inmap[0, 0]) + !isnull($inmap[0, -1]) + \
-                          !isnull($inmap[1, -1]) + !isnull($inmap[1, 0]))',
-            '$outmap_B = (if(isnull($inmap[-1, 0]), 0, $inmap[-1, 0]) + \
-                          if(isnull($inmap[-1, -1]), 0, $inmap[-1, -1]) + \
-                          if(isnull($inmap[0, -1]), 0, $inmap[0, -1]) + \
-                          if(isnull($inmap[0, 0]), 0, $inmap[0, 0])) / \
-                          (!isnull($inmap[-1, 0]) + !isnull($inmap[-1, -1]) + \
-                          !isnull($inmap[0, -1]) + !isnull($inmap[0, 0]))',
-            '$outmap_C = (if(isnull($inmap[-1, 1]), 0, $inmap[-1, 1]) + \
-                          if(isnull($inmap[-1, 0]), 0, $inmap[-1, 0]) + \
-                          if(isnull($inmap[0, 0]), 0, $inmap[0, 0]) + \
-                          if(isnull($inmap[0, 1]), 0, $inmap[0, 1])) / \
-                          (!isnull($inmap[-1, 1]) + !isnull($inmap[-1, 0]) + \
-                          !isnull($inmap[0, 0]) + !isnull($inmap[0, 1]))',
-            '$outmap_D = (if(isnull($inmap[0, 1]), 0, $inmap[0, 1]) + \
-                          if(isnull($inmap[0, 0]), 0, $inmap[0, 0]) + \
-                          if(isnull($inmap[1, 0]), 0, $inmap[1, 0]) + \
-                          if(isnull($inmap[1, 1]), 0, $inmap[1, 1])) / \
-                          (!isnull($inmap[0, 1]) + !isnull($inmap[0, 0]) + \
-                          !isnull($inmap[1, 0]) + !isnull($inmap[1, 1]))'
-          ]
-        )
-        grass.mapcalc(
-            expr,
-            inmap=R_DSM,
-            outmap_A=r_a_z,
-            outmap_B=r_b_z,
-            outmap_C=r_c_z,
-            outmap_D=r_d_z,
-            overwrite=True
-        )
-
-        attr_map_list.extend([r_a_z, r_b_z, r_c_z, r_d_z])
-        TMP_RAST.extend([r_a_z, r_b_z, r_c_z, r_d_z])
-
-    # Precompute values dz/dx (e-w direction), dz/dy (n-s direction)
-    # using moving window [row, col]
-    # TODO2 how to deal with remaining edge effect in slope computation?
-    elif approach == 'vertical_angle':
-
-        r_dz_dew = 'tmp_dz_dew'
-        r_dz_dns = 'tmp_dz_dns'
-
-        expr = ';'.join(
-            [
-            '$outmap_ew = (sqrt(2) * if(isnull($inmap[-1, 1]), 0, $inmap[-1, 1]) + \
-                          2 * if(isnull($inmap[0, 1]), 0, $inmap[0, 1]) + \
-                          sqrt(2) * if(isnull($inmap[1, 1]), 0, $inmap[1, 1]) - \
-                          sqrt(2) * if(isnull($inmap[-1, -1]), 0, $inmap[-1, -1]) - \
-                          2 * if(isnull($inmap[0, -1]), 0, $inmap[0, -1]) - \
-                          sqrt(2) * if(isnull($inmap[1, -1]), 0, $inmap[1, -1])) / \
-                          ((if(isnull($inmap[-1, 1]), 0, 1) + \
-                           if(isnull($inmap[0, 1]), 0, 2) + \
-                           if(isnull($inmap[1, 1]), 0, 1) + \
-                           if(isnull($inmap[-1, -1]), 0, 1) + \
-                           if(isnull($inmap[0, -1]), 0, 2) + \
-                           if(isnull($inmap[1, -1]), 0, 1)) * $w_ew)',
-            '$outmap_ns = (sqrt(2) * if(isnull($inmap[-1, -1]), 0, $inmap[-1, -1]) + \
-                          2 * if(isnull($inmap[-1, 0]), 0, $inmap[-1, 0]) + \
-                          sqrt(2) * if(isnull($inmap[-1, 1]), 0, $inmap[-1, 1]) - \
-                          sqrt(2) * if(isnull($inmap[1, -1]), 0, $inmap[1, -1]) - \
-                          2 * if(isnull($inmap[1, 0]), 0, $inmap[1, 0]) - \
-                          sqrt(2) * if(isnull($inmap[1, 1]), 0, $inmap[1, 1])) / \
-                          ((if(isnull($inmap[-1, -1]), 0, 1) + \
-                           if(isnull($inmap[-1, 0]), 0, 2) + \
-                           if(isnull($inmap[-1, 1]), 0, 1) + \
-                           if(isnull($inmap[1, -1]), 0, 1) + \
-                           if(isnull($inmap[1, 0]), 0, 2) + \
-                           if(isnull($inmap[1, 1]), 0, 1)) * $w_ns)'
-            ]
-        )
-
-        grass.mapcalc(
-            expr,
-            inmap=R_DSM,
-            outmap_ew=r_dz_dew,
-            outmap_ns=r_dz_dns,
-            w_ew=EWRES,
-            w_ns=NSRES,
-            overwrite=True
-        )
-
-        attr_map_list.extend([r_dz_dew, r_dz_dns])
-        TMP_RAST.extend([r_dz_dew, r_dz_dns])
-
-    # ## Use viewshed weights if provided
-    # if r_weights:
-    #     attr_map_list.append(r_weights)
-
-    # ## Extract attribute values
-    # target_pts_grass = grass.read_command(
-    #     'r.what',
-    #     flags='v',
-    #     map=attr_map_list,
-    #     points=v_sources_sample,
-    #     separator='|',
-    #     null_value='*'
-    # )
-
-    # columns to use depending on parametrisation method
-    usecols = list(range(0, 4 + len(attr_map_list)))
-    usecols.remove(3) # skip 3rd column - site_name
-
-    # # convert coordinates and attributes of target points T to numpy array
-    # target_pts_np = txt2numpy(
-    #     target_pts_grass, sep='|', names=None, null_value='*', usecols=usecols, structured=False
-    # )
-
-    # # if one point only - 0D array which cannot be used in iteration
-    # if target_pts_np.ndim == 1:
-    #     target_pts_np = target_pts_np.reshape(1, -1)
-    # no_points = target_pts_np.shape[0]
-    #
-    # # if viewshed weights not set by flag - set weight to 1 for all pts
-    # if not r_weights:
-    #     weights_np = np.ones((no_points, 1))
-    #     target_pts_np = np.hstack((target_pts_np, weights_np))
-    #
-    # grass.message("target_pts_np: {}".format(target_pts_np))
+    # TODO - either here, or in loop (issue 1)
 
     # ==========================================================================
     # Iterate over exposure source polygons
@@ -1182,34 +638,6 @@ def main():
     # ==========================================================================
     # counter to print progress in percentage
     counter = 0
-
-    # # 2D numpy array to store the partial cummulative viewsheds
-    # global NP_CUM
-    # NP_CUM = np.empty((gl_reg_rows, gl_reg_cols), dtype=np.single)
-    # NP_CUM[:] = np.nan
-
-    # # random name of binary viewshed
-    # global R_VIEWSHED
-    # R_VIEWSHED = grass.tempname(6)
-    # TMP_RAST.append(R_VIEWSHED)
-
-    # parametrisation function
-    global PARAMETRISE_VIEWSHED
-    if approach == 'solid_angle':
-        PARAMETRISE_VIEWSHED = solid_angle_reverse
-
-    elif approach == 'distance_decay':
-        PARAMETRISE_VIEWSHED = distance_decay_reverse
-
-    elif approach == 'fuzzy_viewshed':
-        PARAMETRISE_VIEWSHED = fuzzy_viewshed_reverse
-
-    elif approach == 'vertical_angle':
-        PARAMETRISE_VIEWSHED = vertical_angle_reverse
-
-    else:
-        PARAMETRISE_VIEWSHED = binary
-
     start_2 = time.time()
     grass.verbose(_('Iterating over trees...'))
 
@@ -1218,25 +646,98 @@ def main():
         grass.percent(counter, no_sources, 1)
 
         ## Only process features which have attribute table
+        #TODO what are the features without attributes?
         if v_source.attrs is None:
-            grass.verbose("Problem") #TODO what are the features without attributes?
+            grass.verbose("Problem")
 
         else:
             source_id = v_source.attrs['CrownID']
             grass.verbose('Processing exposure source ID: {}'.format(source_id))
 
-            ## Create random points
-            # TODO how to do that? I.e. what module?
-            # TODO when to do that? I.e. for each tree separately, or at the beginning once for all trees?
-
-            ## Calculate parametrised viewshed
-            # TODO reuse functions from r.viewshed.exposure - or insert finished module?
-
-            ## Multiply by weights
+            # ==========================================================================
+            # Adjust computational region to max_dist_inp around processed exposure source
+            # ==========================================================================
             # TODO
 
-            ## Summarise
-            # TODO
+            # ==========================================================================
+            # Random sample exposure source with source points T
+            # ==========================================================================
+            # TODO Issue 1 - either here, or before loop
+            v_sampling_points = #TODO make this a temporary file
+
+            # ==========================================================================
+            # Calculate cummulative (parametrised) viewshed
+            # ==========================================================================
+            r_temp_viewshed = #TODO make this a temporary file
+
+            # if considering exposure source dimensions - parametrised cumulative viewshed
+            if flags['g']:
+                grass.module('r.viewshed.exposure',
+                             dsm = R_DSM,
+                             output = r_temp_viewshed,
+                             sampling_points = v_sampling_points,
+                             observer_elevation = V_ELEVATION,
+                             max_distance = max_dist_inp,
+                             approach = approach,
+                             b1_distance = B_1,
+                             refraction_coeff = REFR_COEFF,
+                             memory = MEMORY,
+                             cores = 1, # TODO I think using 1 core is best, since we'll parallelise over this loop
+                             flags = FLAGSTRING)
+
+            # else binary cumulative viewshed and then parametrisation
+            else:
+                # compute cummulative binary viewshed
+                r_temp_viewshed_1 = #TODO make this a temporary file
+                grass.module('r.viewshed.exposure',
+                             dsm = R_DSM,
+                             output = r_temp_viewshed_1,
+                             sampling_points = v_sampling_points,
+                             observer_elevation = V_ELEVATION,
+                             max_distance = max_dist_inp,
+                             approach = 'binary',
+                             b1_distance = B_1,
+                             refraction_coeff = REFR_COEFF,
+                             memory = MEMORY,
+                             cores = 1, # TODO I think using 1 core is best, since we'll parallelise over this loop
+                             flags = FLAGSTRING)
+
+                # convert to 0/1
+                r_temp_viewshed_2 = #TODO make this a temporary file
+                expr = '$outmap = if($inmap > 1, 1, $inmap)'
+                grass.mapcalc(
+                    expr,
+                    inmap=r_temp_viewshed_1,
+                    outmap=r_temp_viewshed_2,
+                    overwrite=True
+                )
+
+                # parametrise
+                if approch == 'distance_decay':
+                    # TODO implement
+                    r_temp_viewshed = ...
+                elif approach = 'fuzzy viewshed':
+                    # TODO implement
+                    r_temp_viewshed = ...
+                else:
+                    r_temp_viewshed = r_temp_viewshed_2
+
+            # ==========================================================================
+            # Multiply by weights map
+            # ==========================================================================
+            if use_weights:
+                r_temp_viewshed = r_temp_viewshed*r_weights
+
+            # ==========================================================================
+            # Summarise and store in attribute table
+            # ==========================================================================
+            univar = grass.read_command(
+                        'r.univar',
+                        map=r_temp_viewshed
+                    )
+            sum = int(univar.split('\n')[14].split(':')[1])
+            #TODO how to write into an attribute?
+            v_source.attrs[attr_vi] = sum
 
         counter += 1
 
