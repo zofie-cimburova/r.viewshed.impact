@@ -16,6 +16,7 @@ This program is free software under the GNU General Public
 License (>=v2). Read the file COPYING that comes with GRASS
 for details.
 """
+#python3 /home/NINA.NO/zofie.cimburova/PhD/Paper4/SRC/r.viewshed.impact.py
 
 #%module
 #% label: Visual impact of defined exposure source
@@ -36,11 +37,13 @@ for details.
 
 #%option
 #% key: attribute
+#% required: yes
 #% description: Name of attribute column to store visual impact values
 #%end
 
 #%option G_OPT_R_INPUT
 #% key: weight
+#% required: no
 #% description: Name of input weights raster map
 #%end
 
@@ -71,22 +74,23 @@ for details.
 #%end
 
 #%option
-#% key: max_distance
+#% key: range
 #% type: double
 #% required: no
 #% key_desc: value
-#% description: Maximum visibility radius (value > 0.0). -1 for infinity
+#% options: 0.0- , -1 for infinity
+#% description: Exposure range
 #% answer: 100
 #% guisection: Viewshed settings
 #%end
 
 #%option
-#% key: approach
+#% key: function
 #% type: string
 #% required: no
-#% options: binary, distance_decay, fuzzy_viewshed, vertical_angle, solid_angle
+#% options: binary, distance_decay, fuzzy_viewshed, visual_magnitude, solid_angle
 #% key_desc: name
-#% description: Approach for viewshed parametrisation
+#% description: Viewshed parametrisation function
 #% guisection: Viewshed settings
 #% answer: binary
 #%end
@@ -96,7 +100,7 @@ for details.
 #% type: double
 #% required: no
 #% key_desc: value
-#% description: Radius around the viewpoint where clarity is perfect. Used in fuzzy viewshed approach.
+#% description: Radius around the viewpoint where clarity is perfect. Used in fuzzy viewshed function.
 #% guisection: Viewshed settings
 #% answer: 10
 #%end
@@ -155,7 +159,7 @@ for details.
 #% required: no
 #% key_desc: value
 #% options: 1-
-#% description: Number of cores to use in parrallelization
+#% description: Number of cores to use in paralellization
 #% answer: 1
 #%end
 
@@ -166,6 +170,8 @@ import atexit
 import sys
 import subprocess
 import numpy as np
+import csv
+
 
 from grass.pygrass.raster import raster2numpy
 from grass.pygrass.raster import numpy2raster
@@ -182,12 +188,7 @@ from grass.script import utils as grassutils
 # enable coordinate systems with various axis orientation (now assuming Y-north, X-east)
 #      > TODO2 is it so that X is always to the east and Y to the north? I've checked with e.g. s-jtsk and it seems so
 #       > Stefan asks
-# cleaning .tmp mapset
-#      > TODO2 necessary to remove temporary regions? (Are not saved.)
-#      > clean_temp() cleans /.tmp directory.
-#           > TODO2 when to use it? In loop, or at the end?
-#           > copied and adjusted function clean_temp() from https://grass.osgeo.org/grass78/manuals/libpython/_modules/script/setup.html to supress warnings
-#           > Stefan checks - might be issue for parallelization
+
 
 # global variables
 TMP_RAST = []  # to collect temporary rasters
@@ -251,10 +252,10 @@ def distance_decay_reverse(lreg_shape, t_loc, np_viewshed):
     :type t_loc: ndarray
     :param np_viewshed: 2D array of binary viewshed
     :type np_viewshed: ndarray
-    :param NSRES: Cell resolution in N-S direction
-    :type NSRES: float
-    :param EWRES: Cell resolution in E-W direction
-    :type EWRES: float
+    :param nsres: Cell resolution in N-S direction
+    :type nsres: float
+    :param ewres: Cell resolution in E-W direction
+    :type ewres: float
     :return: 2D array of weighted parametrised viewshed
     :rtype: ndarray
     """
@@ -275,8 +276,8 @@ def distance_decay_reverse(lreg_shape, t_loc, np_viewshed):
     #    2D array (lreg_shape[0] x lreg_shape[1])
     v_vect = np.array(
         [
-            (v_loc[0] - t_loc[0]) * NSRES,
-            (v_loc[1] - t_loc[1]) * EWRES
+            (v_loc[0] - t_loc[0]) * nsres,
+            (v_loc[1] - t_loc[1]) * ewres
         ]
     )
 
@@ -306,14 +307,14 @@ def fuzzy_viewshed_reverse(lreg_shape, t_loc, np_viewshed):
     :type t_loc: ndarray
     :param np_viewshed: 2D array of binary viewshed
     :type np_viewshed: ndarray
-    :param B_1: Radius of zone around the viewpoint where clarity is perfect
-    :type B_1: float
-    :param MAX_DIST: Radius of crossover point (maximum viewshed distance)
-    :type MAX_DIST: float
-    :param NSRES: Cell resolution in N-S direction
-    :type NSRES: float
-    :param EWRES: Cell resolution in E-W direction
-    :type EWRES: float
+    :param b_1: Radius of zone around the viewpoint where clarity is perfect
+    :type b_1: float
+    :param max_dist: Radius of crossover point (maximum viewshed distance)
+    :type max_dist: float
+    :param nsres: Cell resolution in N-S direction
+    :type nsres: float
+    :param ewres: Cell resolution in E-W direction
+    :type ewres: float
     :return: 2D array of weighted parametrised viewshed
     :rtype: ndarray
     """
@@ -334,8 +335,8 @@ def fuzzy_viewshed_reverse(lreg_shape, t_loc, np_viewshed):
     #    2D array (lreg_shape[0] x lreg_shape[1])
     v_vect = np.array(
         [
-            (v_loc[0] - t_loc[0]) * NSRES,
-            (v_loc[1] - t_loc[1]) * EWRES
+            (v_loc[0] - t_loc[0]) * nsres,
+            (v_loc[1] - t_loc[1]) * ewres
         ]
     )
 
@@ -348,7 +349,7 @@ def fuzzy_viewshed_reverse(lreg_shape, t_loc, np_viewshed):
 
     # 4. fuzzy viewshed function
     fuzzy_viewshed = np.where(
-        v_scal <= B_1, 1, 1 / (1 + ((v_scal - B_1) / MAX_DIST) ** 2)
+        v_scal <= b_1, 1, 1 / (1 + ((v_scal - b_1) / max_dist) ** 2)
         )
 
     # 5. Multiply fuzzy viewshed by binary viewshed and weight
@@ -506,71 +507,75 @@ def main():
     # Input data
     # ==========================================================================
     ## DSM
-    global R_DSM
-    R_DSM = options['dsm']
-
-    # test if exist
-    gfile_dsm = grass.find_file(name=R_DSM, element='cell')
+    r_dsm = options['dsm']
+    gfile_dsm = grass.find_file(name=r_dsm, element='cell')
     if not gfile_dsm['file']:
-        grass.fatal('Raster map <%s> not found' % R_DSM)
+        grass.fatal('Raster map <%s> not found' % r_dsm)
 
     ## Exposure source
-    sources = options['exposure_source'].split("@")[0] #TODO how to check that it's a polygon map?
+    v_sources = options['exposure_source'].split("@")[0]
+    #TODO how to check that it's a polygon map?
+    #TODO why can only vector map in current mapset be used?
+    gfile_source = grass.find_file(name=v_sources, element='vector')
+    if not gfile_source['file']:
+        grass.fatal('Vector map <%s> not found' % v_sources)
 
-    # test if exist
-    if sources:
-        gfile_source = grass.find_file(name=sources, element='vector')
-        if not gfile_source['file']:
-            grass.fatal('Vector map <%s> not found' % sources)
+    # build topology in case it got corrupted
+    grass.run_command('v.build',
+                      map=v_sources,
+                      quiet=True)
 
-    v_sources = VectorTopo(sources)
-    v_sources.open('rw')
-    no_sources = v_sources.num_primitive_of('area')
+    #v_sources_topo = VectorTopo(v_sources)
+    #v_sources_topo.open('rw')
+
+    # print number of sources
+    #no_sources = v_sources_topo.number_of('areas')
+    #grass.verbose("Number of sources: {}".format(no_sources))
 
     ## Weights
     r_weights = options['weight']
 
     use_weights = 0
-    gfile_weights = grass.find_file(name=r_weights, element='cell')
-    if gfile_weights['file']:
+    if r_weights:
         use_weights = 1
+        gfile_weights = grass.find_file(name=r_weights, element='cell')
+        if not gfile_weights['file']:
+            grass.fatal('Raster map <%s> not found' % r_weights)
 
     ## Attribute to store visual impact values
-    attr_vi = options['attribute']
+    a_impact = options['attribute']
 
-    if attr_vi in v_sources[1].attrs.keys(): # TODO how to check if attribute already exists?
-        grass.fatal('Attribute <%s> already exists' % attr_vi)
-    else:
-        grass.run_command(
-            'v.db.addcolumn',
-            map=sources,
-            columns='{} {}'.format(attr_vi, 'double'))
+    #TODO
+    # if a_impact in v_sources_topo[1].attrs.keys():
+    #     pass # TODO how to check better if attribute already exists?
+    #     #grass.fatal('Attribute <%s> already exists' % a_impact)
+    # else:
+    #     grass.run_command(
+    #         'v.db.addcolumn',
+    #         map=v_sources,
+    #         columns='{} double precision'.format(a_impact))
 
     ## Viewshed settings
-    global FLAGSTRING
-    FLAGSTRING = ''
+    flagstring = ''
     if flags['r']:
-        FLAGSTRING += 'r'
+        flagstring += 'r'
     if flags['c']:
-        FLAGSTRING += 'c'
+        flagstring += 'c'
 
-    global V_ELEVATION
-    global B_1
-    global REFR_COEFF
-    V_ELEVATION = float(options['observer_elevation'])
-    max_dist_inp = float(options['max_distance'])
-    approach = options['approach']
-    B_1 = float(options['b1_distance'])
-    REFR_COEFF = float(options['refraction_coeff'])
+    v_elevation = float(options['observer_elevation'])
+    range = float(options['range'])
+    function = options['function']
+    b_1 = float(options['b1_distance'])
+    refr_coeff = float(options['refraction_coeff'])
 
     # test values
-    if V_ELEVATION < 0.0:
+    if v_elevation < 0.0:
         grass.fatal('Observer elevation must be larger than or equal to 0.0.')
-    if max_dist_inp <= 0.0 and max_dist_inp != -1:
+    if range <= 0.0 and range != -1:
         grass.fatal('Maximum visibility radius must be larger than 0.0.')
-    if approach == 'fuzzy_viewshed' and max_dist_inp == -1:
+    if function == 'fuzzy_viewshed' and range == -1:
         grass.fatal('Maximum visibility radius cannot be infinity for fuzzy viewshed approch.')
-    if approach == 'fuzzy_viewshed' and B_1 > max_dist_inp:
+    if function == 'fuzzy_viewshed' and b_1 > range:
         grass.fatal(
             'Maximum visibility radius must be larger than radius around the viewpoint where clarity is perfect.'
         )
@@ -583,9 +588,9 @@ def main():
         seed = os.getpid()
 
     ## Optional
-    global MEMORY
-    MEMORY = int(options['memory'])
+    memory = int(options['memory'])
     cores = int(options['cores'])
+
 
     # ==========================================================================
     # Region settings
@@ -595,115 +600,149 @@ def main():
         grass.fatal('The analysis is not available for lat/long coordinates.')
 
     # store the current region settings
-    grass.use_temp_region()
+    # TODO viter does not respect region settings - iterates over all trees in map
+    # eiher only grass.script region (grass.run_command(g.region))
+    # or environment settings in r.viewshed.exposure (env=c_env)
+    # # Create processing environment with region information
+    # c_env = os.environ.copy()
+    # c_env["GRASS_REGION"] = grass.region_env(
+    #     n=reg_n, s=reg_s, e=reg_e, w=reg_w
+    # )
+
+    # # grass.use_temp_region()
+    #
 
     # get comp. region parameters
-    global REG
-    REG = Region()
-    gl_reg_rows, gl_reg_cols = REG.rows, REG.cols
-    global GL_REG_N
-    global GL_REG_S
-    GL_REG_N, GL_REG_S = REG.north, REG.south
-    global GL_REG_E
-    global GL_REG_W
-    GL_REG_E, GL_REG_W = REG.east, REG.west
-    global NSRES
-    global EWRES
-    NSRES, EWRES = REG.nsres, REG.ewres
+    reg = Region()
+    nsres, ewres = reg.nsres, reg.ewres
 
-    # check that NSRES equals EWRES
-    if NSRES != EWRES:
+    # check that nsres equals ewres
+    if nsres != ewres:
         grass.fatal('Variable north-south and east-west 2D grid resolution is not supported')
 
     # adjust maximum distance as a multiplicate of region resolution
     # if infinite, set maximum distance to the max of region size
-    global MAX_DIST
-    if max_dist_inp != -1:
-        multiplicate = math.floor(max_dist_inp / NSRES)
-        MAX_DIST = multiplicate * NSRES
+    if range != -1:
+        multiplicate = math.floor(range / nsres)
+        max_dist = multiplicate * nsres
     else:
-        max_dist_inf = max(REG.north - REG.south, REG.east - REG.west)
-        multiplicate = math.floor(max_dist_inf / NSRES)
-        MAX_DIST = multiplicate * NSRES
+        max_dist_inf = max(reg.north - reg.south, reg.east - reg.west)
+        multiplicate = math.floor(max_dist_inf / nsres)
+        max_dist = multiplicate * nsres
 
     # ==========================================================================
-    # Random sample exposure source with source points T
+    # Rasterise vector source map
     # ==========================================================================
-    # TODO - either here, or in loop (issue 1)
+    r_sources = 'tmp_sources_rast'
+    grass.run_command('v.to.rast',
+                      input=v_sources,
+                      output=r_sources,
+                      use='cat',
+                      overwrite=True)
 
     # ==========================================================================
     # Iterate over exposure source polygons
     # and calculate their visual impact
     # using weighted cumulative parametrised viewshed
     # ==========================================================================
+    sources_list = grass.read_command("r.stats",
+                                      flags="cn",
+                                      input=r_sources,
+                                      separator="|")
+
+    sources_np = txt2numpy(
+        sources_list,
+        sep="|",
+        names=None,
+        null_value="*",
+        structured=False,
+    )
+
     # counter to print progress in percentage
     counter = 0
-    start_2 = time.time()
-    grass.verbose(_('Iterating over trees...'))
+    no_sources = sources_np.shape[0]
+    grass.verbose(_('Iterating over {} sources...'.format(no_sources)))
 
-    for v_source in v_sources.viter('areas'):
-        ## Display a progress info message
-        grass.percent(counter, no_sources, 1)
+    t_result = "/home/NINA.NO/zofie.cimburova/PhD/Paper4/DATA/tmp_out.csv"
 
-        ## Only process features which have attribute table
-        #TODO what are the features without attributes?
-        if v_source.attrs is None:
-            grass.verbose("Problem")
+    with open(t_result, "a") as outfile:
+        fieldnames = ['source_cat','value']
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+        writer.writeheader()
 
-        else:
-            source_id = v_source.attrs['CrownID']
-            grass.verbose('Processing exposure source ID: {}'.format(source_id))
+        for source in sources_np:
+            ## Display a progress info message
+            grass.percent(counter, no_sources, 1)
+            counter += 1
+
+            # TODO why is source_id not int?
+            source_id = source[0]
+            source_ncell = source[1]
+            grass.verbose('{}: {}'.format(source_id, source_ncell))
 
             # ==========================================================================
-            # Adjust computational region to max_dist_inp around processed exposure source
+            # Adjust computational region to range around processed exposure source
             # ==========================================================================
-            # TODO
+            # TODO - how to do this with current raster approach?
+            # source_bbox = v_source.bbox()
+            #
+            # grass.run_command('g.region',
+            #                   align=r_dsm,
+            #                   n=source_bbox.north + range,
+            #                   s=source_bbox.south - range,
+            #                   e=source_bbox.east + range,
+            #                   w=source_bbox.west - range)
 
-            # ==========================================================================
-            # Random sample exposure source with source points T
-            # ==========================================================================
-            # TODO Issue 1 - either here, or before loop
-            v_sampling_points = #TODO make this a temporary file
 
             # ==========================================================================
             # Calculate cummulative (parametrised) viewshed
             # ==========================================================================
-            r_temp_viewshed = #TODO make this a temporary file
+            #TODO make this a temporary file
+            r_temp_viewshed = 'tmp_viewshed_{}'.format(source_id)
 
             # if considering exposure source dimensions - parametrised cumulative viewshed
             if flags['g']:
-                grass.module('r.viewshed.exposure',
-                             dsm = R_DSM,
-                             output = r_temp_viewshed,
-                             sampling_points = v_sampling_points,
-                             observer_elevation = V_ELEVATION,
-                             max_distance = max_dist_inp,
-                             approach = approach,
-                             b1_distance = B_1,
-                             refraction_coeff = REFR_COEFF,
-                             memory = MEMORY,
-                             cores = 1, # TODO I think using 1 core is best, since we'll parallelise over this loop
-                             flags = FLAGSTRING)
+                grass.run_command('r.viewshed.exposure',
+                                 dsm = r_dsm,
+                                 output = r_temp_viewshed,
+                                 source = r_sources,
+                                 sourcecat = source_id,
+                                 observer_elevation = v_elevation,
+                                 range = range,
+                                 function = function,
+                                 b1_distance = b_1,
+                                 refraction_coeff = refr_coeff,
+                                 memory = memory,
+                                 cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
+                                 flags = flagstring,
+                                 quiet=True,
+                                 overwrite=True)
+
 
             # else binary cumulative viewshed and then parametrisation
             else:
                 # compute cummulative binary viewshed
-                r_temp_viewshed_1 = #TODO make this a temporary file
-                grass.module('r.viewshed.exposure',
-                             dsm = R_DSM,
-                             output = r_temp_viewshed_1,
-                             sampling_points = v_sampling_points,
-                             observer_elevation = V_ELEVATION,
-                             max_distance = max_dist_inp,
-                             approach = 'binary',
-                             b1_distance = B_1,
-                             refraction_coeff = REFR_COEFF,
-                             memory = MEMORY,
-                             cores = 1, # TODO I think using 1 core is best, since we'll parallelise over this loop
-                             flags = FLAGSTRING)
+                #TODO make this a temporary file
+                r_temp_viewshed_1 = "tmp_viewshed_binary"
+                grass.run_command('r.viewshed.exposure',
+                                 dsm = r_dsm,
+                                 output = r_temp_viewshed_1,
+                                 source = r_sources,
+                                 sourcecat = source_id,
+                                 observer_elevation = v_elevation,
+                                 range = range,
+                                 function = 'binary',
+                                 b1_distance = b_1,
+                                 refraction_coeff = refr_coeff,
+                                 memory = memory,
+                                 cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
+                                 flags = flagstring,
+                                 quiet=True,
+                                 overwrite=True)
 
                 # convert to 0/1
-                r_temp_viewshed_2 = #TODO make this a temporary file
+                #TODO make this a temporary file
+                r_temp_viewshed_2 = "tmp_viewshed_threshold"
                 expr = '$outmap = if($inmap > 1, 1, $inmap)'
                 grass.mapcalc(
                     expr,
@@ -713,36 +752,49 @@ def main():
                 )
 
                 # parametrise
-                if approch == 'distance_decay':
+                if function == 'distance_decay':
                     # TODO implement
-                    r_temp_viewshed = ...
-                elif approach = 'fuzzy viewshed':
+                    #r_temp_viewshed = ...
+                    pass
+                elif function == 'fuzzy viewshed':
                     # TODO implement
-                    r_temp_viewshed = ...
+                    #r_temp_viewshed = ...
+                    pass
                 else:
                     r_temp_viewshed = r_temp_viewshed_2
 
-            # ==========================================================================
-            # Multiply by weights map
-            # ==========================================================================
-            if use_weights:
-                r_temp_viewshed = r_temp_viewshed*r_weights
+                # ==========================================================================
+                # Multiply by weights map
+                # ==========================================================================
+                r_temp_viewshed_weighted = 'tmp_viewshed_weighted_{}'.format(source_id)
+                if use_weights:
+                    grass.mapcalc('$outmap = $map_a * $map_b',
+                                 map_a=r_temp_viewshed,
+                                 map_b=r_weights,
+                                 outmap=r_temp_viewshed_weighted,
+                                 overwrite=True,
+                                 quiet=grass.verbosity() <= 1)
+                else:
+                     r_temp_viewshed_weighted=r_temp_viewshed
 
-            # ==========================================================================
-            # Summarise and store in attribute table
-            # ==========================================================================
-            univar = grass.read_command(
-                        'r.univar',
-                        map=r_temp_viewshed
-                    )
-            sum = int(univar.split('\n')[14].split(':')[1])
-            #TODO how to write into an attribute?
-            v_source.attrs[attr_vi] = sum
 
-        counter += 1
+                # ==========================================================================
+                # Summarise and store in attribute table
+                # ==========================================================================
+                # TODO normalise by # points!
+                univar = grass.read_command(
+                            'r.univar',
+                            map=r_temp_viewshed_weighted
+                        )
+                sum = float(univar.split('\n')[14].split(':')[1])
 
-    end_2 = time.time()
-    grass.verbose(_('...finished in {} s'.format(end_2 - start_2)))
+                grass.verbose(sum)
+                writer.writerow({'source_cat':source_id,
+                                 'value':sum})
+
+                break
+
+
 
     # ## Remove temporary raster - binary viewshed
     # grass.run_command(
@@ -753,20 +805,15 @@ def main():
     #     name=R_VIEWSHED
     # )
 
-    ## Restore original computational region
-    # gsl sets region for gsl tasks
-    grass.del_temp_region()
-
-    # pygrass sets region for pygrass tasks
-    REG.read()
-    REG.set_current()
-    REG.set_raster_region()
-
-    # ## Convert numpy array of cummulative viewshed to raster
-    # numpy2raster(NP_CUM, mtype='FCELL', rastname=r_output, overwrite=True)
-
-    ## Close vector access
-    v_sources.close()
+    # ## Restore original computational region
+    # # gsl sets region for gsl tasks
+    # grass.del_temp_region()
+    #
+    # # pygrass sets region for pygrass tasks
+    # reg.read()
+    # reg.set_current()
+    # reg.set_raster_region()
+    
 
     return
 
