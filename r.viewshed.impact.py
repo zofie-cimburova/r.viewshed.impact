@@ -525,13 +525,6 @@ def main():
                       map=v_sources,
                       quiet=True)
 
-    #v_sources_topo = VectorTopo(v_sources)
-    #v_sources_topo.open('rw')
-
-    # print number of sources
-    #no_sources = v_sources_topo.number_of('areas')
-    #grass.verbose("Number of sources: {}".format(no_sources))
-
     ## Weights
     r_weights = options['weight']
 
@@ -545,15 +538,17 @@ def main():
     ## Attribute to store visual impact values
     a_impact = options['attribute']
 
-    #TODO
+    #TODO how to check better if attribute already exists and what to do if it exists?
     # if a_impact in v_sources_topo[1].attrs.keys():
-    #     pass # TODO how to check better if attribute already exists?
-    #     #grass.fatal('Attribute <%s> already exists' % a_impact)
+    #     grass.fatal('Attribute <%s> already exists' % a_impact)
     # else:
     #     grass.run_command(
     #         'v.db.addcolumn',
     #         map=v_sources,
     #         columns='{} double precision'.format(a_impact))
+
+    # TODO how to write results to attribute table? Now written to file
+    t_result = "/home/NINA.NO/zofie.cimburova/PhD/Paper4/DATA/tmp_out.csv"
 
     ## Viewshed settings
     flagstring = ''
@@ -600,17 +595,15 @@ def main():
         grass.fatal('The analysis is not available for lat/long coordinates.')
 
     # store the current region settings
-    # TODO viter does not respect region settings - iterates over all trees in map
-    # eiher only grass.script region (grass.run_command(g.region))
+    # TODO
+    # either only grass.script region (grass.run_command(g.region))
     # or environment settings in r.viewshed.exposure (env=c_env)
     # # Create processing environment with region information
     # c_env = os.environ.copy()
     # c_env["GRASS_REGION"] = grass.region_env(
     #     n=reg_n, s=reg_s, e=reg_e, w=reg_w
     # )
-
     # # grass.use_temp_region()
-    #
 
     # get comp. region parameters
     reg = Region()
@@ -620,15 +613,6 @@ def main():
     if nsres != ewres:
         grass.fatal('Variable north-south and east-west 2D grid resolution is not supported')
 
-    # adjust maximum distance as a multiplicate of region resolution
-    # if infinite, set maximum distance to the max of region size
-    if range != -1:
-        multiplicate = math.floor(range / nsres)
-        max_dist = multiplicate * nsres
-    else:
-        max_dist_inf = max(reg.north - reg.south, reg.east - reg.west)
-        multiplicate = math.floor(max_dist_inf / nsres)
-        max_dist = multiplicate * nsres
 
     # ==========================================================================
     # Rasterise vector source map
@@ -663,7 +647,6 @@ def main():
     no_sources = sources_np.shape[0]
     grass.verbose(_('Iterating over {} sources...'.format(no_sources)))
 
-    t_result = "/home/NINA.NO/zofie.cimburova/PhD/Paper4/DATA/tmp_out.csv"
 
     with open(t_result, "a") as outfile:
         fieldnames = ['source_cat','value']
@@ -676,8 +659,8 @@ def main():
             counter += 1
 
             # TODO why is source_id not int?
-            source_id = source[0]
-            source_ncell = source[1]
+            source_id = int(source[0])
+            source_ncell = int(source[1])
             grass.verbose('{}: {}'.format(source_id, source_ncell))
 
             # ==========================================================================
@@ -692,7 +675,6 @@ def main():
             #                   s=source_bbox.south - range,
             #                   e=source_bbox.east + range,
             #                   w=source_bbox.west - range)
-
 
             # ==========================================================================
             # Calculate cummulative (parametrised) viewshed
@@ -711,6 +693,7 @@ def main():
                                  range = range,
                                  function = function,
                                  b1_distance = b_1,
+                                 sample_density = source_sample_density,
                                  refraction_coeff = refr_coeff,
                                  memory = memory,
                                  cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
@@ -733,6 +716,7 @@ def main():
                                  range = range,
                                  function = 'binary',
                                  b1_distance = b_1,
+                                 sample_density = source_sample_density,
                                  refraction_coeff = refr_coeff,
                                  memory = memory,
                                  cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
@@ -763,36 +747,39 @@ def main():
                 else:
                     r_temp_viewshed = r_temp_viewshed_2
 
-                # ==========================================================================
-                # Multiply by weights map
-                # ==========================================================================
-                r_temp_viewshed_weighted = 'tmp_viewshed_weighted_{}'.format(source_id)
-                if use_weights:
-                    grass.mapcalc('$outmap = $map_a * $map_b',
-                                 map_a=r_temp_viewshed,
-                                 map_b=r_weights,
-                                 outmap=r_temp_viewshed_weighted,
-                                 overwrite=True,
-                                 quiet=grass.verbosity() <= 1)
-                else:
-                     r_temp_viewshed_weighted=r_temp_viewshed
+            # ==========================================================================
+            # Multiply by weights map
+            # ==========================================================================
+            r_temp_viewshed_weighted = 'tmp_viewshed_weighted_{}'.format(source_id)
+            if use_weights:
+                grass.mapcalc('$outmap = $map_a * $map_b',
+                             map_a=r_temp_viewshed,
+                             map_b=r_weights,
+                             outmap=r_temp_viewshed_weighted,
+                             overwrite=True,
+                             quiet=grass.verbosity() <= 1)
+            else:
+                 r_temp_viewshed_weighted=r_temp_viewshed
 
 
-                # ==========================================================================
-                # Summarise and store in attribute table
-                # ==========================================================================
-                # TODO normalise by # points!
-                univar = grass.read_command(
-                            'r.univar',
-                            map=r_temp_viewshed_weighted
-                        )
+            # ==========================================================================
+            # Summarise raster values and write to attribute table
+            # ==========================================================================
+            univar = grass.read_command(
+                        'r.univar',
+                        map=r_temp_viewshed_weighted
+                    )
+            if flags['g']:
+                # normalise by number of points
+                sum = float(univar.split('\n')[14].split(':')[1])/source_ncell
+            else:
                 sum = float(univar.split('\n')[14].split(':')[1])
 
-                grass.verbose(sum)
-                writer.writerow({'source_cat':source_id,
-                                 'value':sum})
+            grass.verbose(sum)
+            writer.writerow({'source_cat':source_id,
+                             'value':sum})
 
-                break
+            break
 
 
 
@@ -813,7 +800,7 @@ def main():
     # reg.read()
     # reg.set_current()
     # reg.set_raster_region()
-    
+
 
     return
 
