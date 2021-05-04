@@ -180,6 +180,8 @@ from grass.pygrass.gis.region import Region
 from grass.pygrass.vector.basic import Bbox
 from grass.pygrass.vector import VectorTopo
 from grass.pygrass.modules import Module
+from grass.pygrass.raster import RasterRow
+from grass.pygrass.gis import Mapset
 
 
 import grass.script as grass
@@ -191,55 +193,71 @@ from grass.script import utils as grassutils
 
 
 # global variables
-TMP_RAST = []  # to collect temporary rasters
-TMP_VECT = []  # to collect temporary vectors
-
+TEMPNAME = grass.tempname(12)
 
 def cleanup():
     """Remove raster and vector maps stored in a list"""
-    for rast in TMP_RAST:
-        grass.run_command(
-            'g.remove',
-            flags='f',
-            type='raster',
-            name=rast,
-            quiet=True,
-            stderr=subprocess.PIPE
-        )
-    for vect in TMP_VECT:
-        grass.run_command(
-            'g.remove',
-            flags='f',
-            type='vector',
-            name=vect,
-            quiet=True,
-            stderr=subprocess.PIPE
-        )
+    grass.run_command(
+        "g.remove",
+        flags="f",
+        type="raster,vector,region",
+        pattern="{}_*".format(TEMPNAME),
+        quiet=True,
+        stderr=subprocess.PIPE,
+    )
+
+    # Reset mask if user MASK was present
+    if (
+        RasterRow("MASK", Mapset().name).exist()
+        and RasterRow("MASK_{}".format(TEMPNAME)).exist()
+    ):
+        grass.run_command("r.mask", flags="r", quiet=True)
+    reset_mask()
 
 
-def call(cmd, **kwargs):
-    """Wrapper for subprocess.call to deal with platform-specific issues
-    Function copied from
-    https://grass.osgeo.org/grass78/manuals/libpython/_modules/script/setup.html
-    to enable supressing message from clean_temp()"""
+def unset_mask():
+    """Deactivate user mask"""
+    if RasterRow("MASK", Mapset().name).exist():
+        try:
+            grass.run_command(
+                "g.copy",
+                quiet=True,
+                raster="MASK,MASK_{}".format(TEMPNAME),
+                stderr=subprocess.DEVNULL,
+            )
+            grass.run_command(
+                "g.remove",
+                quiet=True,
+                type="raster",
+                name="MASK",
+                stderr=subprocess.DEVNULL,
+                flags="f",
+            )
+        except:
+            pass
 
-    windows = sys.platform == 'win32'
 
-    if windows:
-        kwargs['shell'] = True
-    return subprocess.call(cmd, **kwargs)
-
-
-def clean_temp():
-    """Modified from
-    https://grass.osgeo.org/grass78/manuals/libpython/_modules/script/setup.html
-    to enable supressing message"""
-
-    # gcore.message(_('Cleaning up temporary files...'))
-    nul = open(os.devnull, 'w')
-    gisbase = os.environ['GISBASE']
-    call([os.path.join(gisbase, 'etc', 'clean_temp')], stdout=nul)
-    nul.close()
+def reset_mask():
+    """Re-activate user mask"""
+    if RasterRow("MASK_{}".format(TEMPNAME)).exist():
+        try:
+            grass.warning("reset mask")
+            grass.run_command(
+                "g.copy",
+                quiet=True,
+                raster="MASK_{},MASK".format(TEMPNAME),
+                stderr=subprocess.DEVNULL,
+            )
+            grass.run_command(
+                "g.remove",
+                quiet=True,
+                type="raster",
+                name="MASK_{}".format(TEMPNAME),
+                stderr=subprocess.DEVNULL,
+                flags="f",
+            )
+        except:
+            pass
 
 
 def distance_decay_reverse(lreg_shape, t_loc, np_viewshed):
@@ -359,76 +377,6 @@ def fuzzy_viewshed_reverse(lreg_shape, t_loc, np_viewshed):
     return np_viewshed_param
 
 
-def sample_raster_with_points(r_map, cat, nsample, min_d, v_sample, seed):
-    """Random sample exposure source by vector points
-    :param r_map: Raster map to be sampled from
-    :type r_map: string
-    :param cat: Category of raster map to be sampled from
-    :type cat: string
-    :param nsample: Number of points to sample
-    :type nsample: int
-    :param min_d: Minimum distance between sampling points
-    :type min_d: float
-    :param v_sample: Name of output vector map of sampling points
-    :type v_sample: string
-    :param seed: Random seed
-    :param seed: int
-    :return: Name of output vector map of sampling points
-    :rtype: string
-    """
-    # mask categories of raster map to be sampled from
-    grass.run_command(
-        'r.mask',
-        raster=r_map,
-        maskcats=cat,
-        overwrite=True, # TODO2 what to do if mask already exists?
-        quiet=True
-    )
-
-    # random sample points - raster
-    r_sample = 'temp_rand_pts_rast'
-    grass.run_command(
-        'r.random.cells',
-        output=r_sample,
-        ncells=nsample,
-        distance=min_d,
-        overwrite=True,
-        quiet=True,
-        seed=seed
-    )
-    TMP_RAST.append(r_sample)
-
-    # vectorize raster of random sample points
-    grass.run_command(
-        'r.to.vect',
-        flags='b',
-        input=r_sample,
-        output=v_sample,
-        type='point',
-        overwrite=True,
-        quiet=True,
-        stderr=subprocess.PIPE
-    )
-
-    # remove mask
-    grass.run_command(
-        'r.mask',
-        flags='r',
-        quiet=True
-    )
-
-    # remove random sample points - raster
-    grass.run_command(
-        'g.remove',
-        flags='f',
-        type='raster',
-        name=r_sample,
-        quiet=True
-    )
-
-    return v_sample
-
-
 def txt2numpy(
     tablestring,
     sep=',',
@@ -514,7 +462,6 @@ def main():
 
     ## Exposure source
     v_sources = options['exposure_source'].split("@")[0]
-    #TODO how to check that it's a polygon map?
     #TODO why can only vector map in current mapset be used?
     gfile_source = grass.find_file(name=v_sources, element='vector')
     if not gfile_source['file']:
@@ -588,11 +535,17 @@ def main():
 
 
     # ==========================================================================
-    # Region settings
+    # Region and mask settings
     # ==========================================================================
     # check that location is not in lat/long
     if grass.locn_is_latlong():
         grass.fatal('The analysis is not available for lat/long coordinates.')
+
+    user_mask = False
+    if RasterRow("MASK", Mapset().name).exist():
+        grass.warning(_("Current MASK is temporarily renamed."))
+        user_mask = True
+        unset_mask()
 
     # store the current region settings
     # TODO
@@ -617,12 +570,13 @@ def main():
     # ==========================================================================
     # Rasterise vector source map
     # ==========================================================================
-    r_sources = 'tmp_sources_rast'
+    r_sources = "{}_src_rast".format(TEMPNAME)
     grass.run_command('v.to.rast',
                       input=v_sources,
                       output=r_sources,
                       use='cat',
-                      overwrite=True)
+                      overwrite=True,
+                      quiet=True)
 
     # ==========================================================================
     # Iterate over exposure source polygons
@@ -645,8 +599,6 @@ def main():
     # counter to print progress in percentage
     counter = 0
     no_sources = sources_np.shape[0]
-    grass.verbose(_('Iterating over {} sources...'.format(no_sources)))
-
 
     with open(t_result, "a") as outfile:
         fieldnames = ['source_cat','value']
@@ -661,7 +613,7 @@ def main():
             # TODO why is source_id not int?
             source_id = int(source[0])
             source_ncell = int(source[1])
-            grass.verbose('{}: {}'.format(source_id, source_ncell))
+            grass.verbose('Processing source {}, {}%'.format(source_id, counter/no_sources*100))
 
             # ==========================================================================
             # Adjust computational region to range around processed exposure source
@@ -679,8 +631,7 @@ def main():
             # ==========================================================================
             # Calculate cummulative (parametrised) viewshed
             # ==========================================================================
-            #TODO make this a temporary file
-            r_temp_viewshed = 'tmp_viewshed_{}'.format(source_id)
+            r_temp_viewshed = "{}_viewshed".format(TEMPNAME)
 
             # if considering exposure source dimensions - parametrised cumulative viewshed
             if flags['g']:
@@ -705,8 +656,7 @@ def main():
             # else binary cumulative viewshed and then parametrisation
             else:
                 # compute cummulative binary viewshed
-                #TODO make this a temporary file
-                r_temp_viewshed_1 = "tmp_viewshed_binary"
+                r_temp_viewshed_1 = "{}_viewshed_binary".format(TEMPNAME)
                 grass.run_command('r.viewshed.exposure',
                                  dsm = r_dsm,
                                  output = r_temp_viewshed_1,
@@ -725,8 +675,7 @@ def main():
                                  overwrite=True)
 
                 # convert to 0/1
-                #TODO make this a temporary file
-                r_temp_viewshed_2 = "tmp_viewshed_threshold"
+                r_temp_viewshed_2 = "{}_viewshed_threshold".format(TEMPNAME)
                 expr = '$outmap = if($inmap > 1, 1, $inmap)'
                 grass.mapcalc(
                     expr,
@@ -775,22 +724,8 @@ def main():
             else:
                 sum = float(univar.split('\n')[14].split(':')[1])
 
-            grass.verbose(sum)
             writer.writerow({'source_cat':source_id,
                              'value':sum})
-
-            break
-
-
-
-    # ## Remove temporary raster - binary viewshed
-    # grass.run_command(
-    #     'g.remove',
-    #     quiet=True,
-    #     flags='f',
-    #     type='raster',
-    #     name=R_VIEWSHED
-    # )
 
     # ## Restore original computational region
     # # gsl sets region for gsl tasks
@@ -802,12 +737,11 @@ def main():
     # reg.set_raster_region()
 
 
-    return
+    # Remove temporary files and reset mask if needed
+    cleanup()
 
 
 if __name__ == '__main__':
     options, flags = grass.parser()
+    atexit.register(cleanup)
     sys.exit(main())
-
-    # # remove temporary rasters
-    # atexit.register(cleanup)
