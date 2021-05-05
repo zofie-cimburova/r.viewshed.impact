@@ -53,11 +53,6 @@ for details.
 #%end
 
 #%flag
-#% key: g
-#% description: Exposure source dimensions influence visibility impact
-#%end
-
-#%flag
 #% key: c
 #% description: Consider the curvature of the earth (current ellipsoid)
 #% guisection: Viewshed settings
@@ -88,7 +83,7 @@ for details.
 #% key: function
 #% type: string
 #% required: no
-#% options: binary, distance_decay, fuzzy_viewshed, visual_magnitude, solid_angle
+#% options: no, binary, distance_decay, fuzzy_viewshed, visual_magnitude, solid_angle
 #% key_desc: name
 #% description: Viewshed parametrisation function
 #% guisection: Viewshed settings
@@ -188,7 +183,7 @@ import grass.script as grass
 from grass.script import utils as grassutils
 
 # enable coordinate systems with various axis orientation (now assuming Y-north, X-east)
-#      > TODO2 is it so that X is always to the east and Y to the north? I've checked with e.g. s-jtsk and it seems so
+    #      > TODO2 is it so that X is always to the east and Y to the north? I've checked with e.g. s-jtsk and it seems so
 #       > Stefan asks
 
 
@@ -258,123 +253,6 @@ def reset_mask():
             )
         except:
             pass
-
-
-def distance_decay_reverse(lreg_shape, t_loc, np_viewshed):
-    """Calculates distance decay weights to target based on
-    Gret-Regamey et al. (2007) and Chamberlain & Meitner (2013) and use these
-    to parametrise binary viewshed
-    :param lreg_shape: Dimensions of local computational region
-    :type lreg_shape: list
-    :param t_loc: Array of target point coordinates in local coordinate system
-    :type t_loc: ndarray
-    :param np_viewshed: 2D array of binary viewshed
-    :type np_viewshed: ndarray
-    :param nsres: Cell resolution in N-S direction
-    :type nsres: float
-    :param ewres: Cell resolution in E-W direction
-    :type ewres: float
-    :return: 2D array of weighted parametrised viewshed
-    :rtype: ndarray
-    """
-    # 1. local row, col coordinates of observer points V
-    #    2D array (lreg_shape[0] x lreg_shape[1] x 2)
-    v_loc = np.array(
-        [
-            np.tile(
-                np.arange(0.5, lreg_shape[0] + 0.5).reshape(-1, 1), (1, lreg_shape[1])
-            ),
-            np.tile(
-                np.arange(0.5, lreg_shape[1] + 0.5).reshape(-1, 1).transpose(), (lreg_shape[0], 1)
-            ),
-        ]
-    )
-
-    # 2. vector VT, adjusted for cell size
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    v_vect = np.array(
-        [
-            (v_loc[0] - t_loc[0]) * nsres,
-            (v_loc[1] - t_loc[1]) * ewres
-        ]
-    )
-
-    # 3. size of vector VT
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    v_scal = np.sqrt(v_vect[0] ** 2 + v_vect[1] ** 2)
-
-    # replace 0 distance for central pixel by 1 to avoid division by 0
-    v_scal = np.where(v_scal == 0, 1, v_scal)
-
-    # 4. distance decay function
-    distance_decay = 1 / (v_scal ** 2)
-
-    # 5. Multiply distance decay by binary viewshed and weight
-    weight = t_loc[-1]
-    np_viewshed_param = distance_decay * np_viewshed * weight
-
-    return np_viewshed_param
-
-
-def fuzzy_viewshed_reverse(lreg_shape, t_loc, np_viewshed):
-    """Calculates fuzzy viewshed weights from viewpoints to target based on
-    Fisher (1994) and use these to parametrise binary viewshed
-    :param lreg_shape: Dimensions of local computational region
-    :type lreg_shape: list
-    :param t_loc: Array of target point coordinates in local coordinate system
-    :type t_loc: ndarray
-    :param np_viewshed: 2D array of binary viewshed
-    :type np_viewshed: ndarray
-    :param b_1: Radius of zone around the viewpoint where clarity is perfect
-    :type b_1: float
-    :param max_dist: Radius of crossover point (maximum viewshed distance)
-    :type max_dist: float
-    :param nsres: Cell resolution in N-S direction
-    :type nsres: float
-    :param ewres: Cell resolution in E-W direction
-    :type ewres: float
-    :return: 2D array of weighted parametrised viewshed
-    :rtype: ndarray
-    """
-    # 1. local row, col coordinates of observer points V
-    #    2D array (lreg_shape[0] x lreg_shape[1] x 2)
-    v_loc = np.array(
-        [
-            np.tile(
-                np.arange(0.5, lreg_shape[0] + 0.5).reshape(-1, 1), (1, lreg_shape[1])
-            ),
-            np.tile(
-                np.arange(0.5, lreg_shape[1] + 0.5).reshape(-1, 1).transpose(), (lreg_shape[0], 1)
-            ),
-        ]
-    )
-
-    # 2. vector VT, adjusted for cell size
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    v_vect = np.array(
-        [
-            (v_loc[0] - t_loc[0]) * nsres,
-            (v_loc[1] - t_loc[1]) * ewres
-        ]
-    )
-
-    # 3. size of vector VT
-    #    2D array (lreg_shape[0] x lreg_shape[1])
-    v_scal = np.sqrt(v_vect[0] ** 2 + v_vect[1] ** 2)
-
-    # replace 0 distance for central pixel by 1 to avoid division by 0
-    v_scal = np.where(v_scal == 0, 1, v_scal)
-
-    # 4. fuzzy viewshed function
-    fuzzy_viewshed = np.where(
-        v_scal <= b_1, 1, 1 / (1 + ((v_scal - b_1) / max_dist) ** 2)
-        )
-
-    # 5. Multiply fuzzy viewshed by binary viewshed and weight
-    weight = t_loc[-1]
-    np_viewshed_param = fuzzy_viewshed * np_viewshed * weight
-
-    return np_viewshed_param
 
 
 def txt2numpy(
@@ -631,10 +509,40 @@ def main():
             # ==========================================================================
             # Calculate cummulative (parametrised) viewshed
             # ==========================================================================
-            r_temp_viewshed = "{}_viewshed".format(TEMPNAME)
+            r_exposure = "{}_exposure".format(TEMPNAME)
 
-            # if considering exposure source dimensions - parametrised cumulative viewshed
-            if flags['g']:
+            # if only binary output
+            if function == 'no'
+                r_exposure_binary = "{}_exposure_binary".format(TEMPNAME)
+
+                grass.run_command('r.viewshed.exposure',
+                                 dsm = r_dsm,
+                                 output = r_exposure_binary,
+                                 source = r_sources,
+                                 sourcecat = source_id,
+                                 observer_elevation = v_elevation,
+                                 range = range,
+                                 function = 'binary',
+                                 b1_distance = b_1,
+                                 sample_density = source_sample_density,
+                                 refraction_coeff = refr_coeff,
+                                 memory = memory,
+                                 cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
+                                 flags = flagstring,
+                                 quiet=True,
+                                 overwrite=True)
+
+                # convert to 0/1
+                expr = '$outmap = if($inmap > 1, 1, $inmap)'
+                grass.mapcalc(
+                    expr,
+                    inmap=r_exposure_binary,
+                    outmap=r_exposure,
+                    overwrite=True
+                )
+
+            # else
+            else:
                 grass.run_command('r.viewshed.exposure',
                                  dsm = r_dsm,
                                  output = r_temp_viewshed,
@@ -653,62 +561,19 @@ def main():
                                  overwrite=True)
 
 
-            # else binary cumulative viewshed and then parametrisation
-            else:
-                # compute cummulative binary viewshed
-                r_temp_viewshed_1 = "{}_viewshed_binary".format(TEMPNAME)
-                grass.run_command('r.viewshed.exposure',
-                                 dsm = r_dsm,
-                                 output = r_temp_viewshed_1,
-                                 source = r_sources,
-                                 sourcecat = source_id,
-                                 observer_elevation = v_elevation,
-                                 range = range,
-                                 function = 'binary',
-                                 b1_distance = b_1,
-                                 sample_density = source_sample_density,
-                                 refraction_coeff = refr_coeff,
-                                 memory = memory,
-                                 cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
-                                 flags = flagstring,
-                                 quiet=True,
-                                 overwrite=True)
-
-                # convert to 0/1
-                r_temp_viewshed_2 = "{}_viewshed_threshold".format(TEMPNAME)
-                expr = '$outmap = if($inmap > 1, 1, $inmap)'
-                grass.mapcalc(
-                    expr,
-                    inmap=r_temp_viewshed_1,
-                    outmap=r_temp_viewshed_2,
-                    overwrite=True
-                )
-
-                # parametrise
-                if function == 'distance_decay':
-                    # TODO implement
-                    #r_temp_viewshed = ...
-                    pass
-                elif function == 'fuzzy viewshed':
-                    # TODO implement
-                    #r_temp_viewshed = ...
-                    pass
-                else:
-                    r_temp_viewshed = r_temp_viewshed_2
-
             # ==========================================================================
-            # Multiply by weights map
+            # Multiply exposure by weights map
             # ==========================================================================
-            r_temp_viewshed_weighted = 'tmp_viewshed_weighted_{}'.format(source_id)
+            r_exposure_weighted = "{}_exposure_weighted".format(TEMPNAME)
             if use_weights:
                 grass.mapcalc('$outmap = $map_a * $map_b',
-                             map_a=r_temp_viewshed,
+                             map_a=r_exposure,
                              map_b=r_weights,
-                             outmap=r_temp_viewshed_weighted,
+                             outmap=r_exposure_weighted,
                              overwrite=True,
                              quiet=grass.verbosity() <= 1)
             else:
-                 r_temp_viewshed_weighted=r_temp_viewshed
+                 r_exposure_weighted=r_exposure
 
 
             # ==========================================================================
@@ -716,13 +581,10 @@ def main():
             # ==========================================================================
             univar = grass.read_command(
                         'r.univar',
-                        map=r_temp_viewshed_weighted
+                        map=r_exposure_weighted
                     )
-            if flags['g']:
-                # normalise by number of points
-                sum = float(univar.split('\n')[14].split(':')[1])/source_ncell
-            else:
-                sum = float(univar.split('\n')[14].split(':')[1])
+
+            sum = float(univar.split('\n')[14].split(':')[1])
 
             writer.writerow({'source_cat':source_id,
                              'value':sum})
