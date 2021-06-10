@@ -427,7 +427,7 @@ def main():
     # option for binary output instead of cummulative
     binary_output = False
     if function == "None":
-        function = "Binary viewshed"
+        function = "Binary"
         binary_output = True
 
     ## Sampling settings
@@ -573,6 +573,20 @@ def main():
                     overwrite=True
                 )
 
+
+            # ==========================================================================
+            # Exclude tree pixels
+            # ==========================================================================
+            grass.mapcalc(
+                '$outmap = if(isnull($map_s),$map_e,if($map_s==$cat,null(),$map_e))',
+                map_e=r_exposure,
+                map_s=r_sources,
+                cat=source_id,
+                outmap=r_exposure,
+                overwrite=True
+            )
+
+
             # ==========================================================================
             # Multiply exposure by weights map
             # ==========================================================================
@@ -588,6 +602,7 @@ def main():
             else:
                  r_exposure_weighted = r_exposure
 
+
             # ==========================================================================
             # Summarise raster values and write to attribute table
             # ==========================================================================
@@ -600,6 +615,8 @@ def main():
 
             writer.writerow({'source_cat':source_id,
                              'value':sum})
+
+            
 
 
     # ## Restore original computational region
