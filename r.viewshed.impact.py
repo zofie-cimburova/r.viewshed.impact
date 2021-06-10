@@ -5,13 +5,12 @@ MODULE:       r.viewshed.impact
 
 AUTHOR(S):    Zofie Cimburova, Stefan Blumentrath
 
-PURPOSE:      TODO1 add purpose description
+PURPOSE:      Computes visual impact of defined exposure source using weighted parametrised viewshed analysis
 
 COPYRIGHT:    (C) 2021 by Zofie Cimburova, Stefan Blumentrath, and the GRASS Development Team
 
 REFERENCES:   TODO1 reference papers used and the paper to be published
 
-# TODO1 which licence text to use?
 This program is free software under the GNU General Public
 License (>=v2). Read the file COPYING that comes with GRASS
 for details.
@@ -29,32 +28,46 @@ for details.
 #% keyword: impact
 #%end
 
-#%option G_OPT_V_INPUT
+#%option G_OPT_V_MAP
 #% key: exposure_source
 #% label: Name of input map of exposure source locations
-#% description: Name of input map of exposure source locations
+#% required: yes
+#% guidependency: range_layer, range_col
+#%end
+
+#%option G_OPT_V_FIELD
+#% key: range_layer
+#% guidependency: range_col
 #%end
 
 #%option
-#% key: attribute
+#% key: column
 #% required: yes
-#% description: Name of attribute column to store visual impact values
+#% label: Name of attribute column to store visual impact values
+#%end
+
+#%option G_OPT_R_INPUT
+#% key: dsm
+#% required: yes
+#% label: Name of input digital surface raster map
 #%end
 
 #%option G_OPT_R_INPUT
 #% key: weight
 #% required: no
-#% description: Name of input weights raster map
+#% label: Name of input weights raster map
+#% guisection: Weights settings
 #%end
 
-#%option G_OPT_R_INPUT
-#% key: dsm
-#% description: Name of input digital surface raster map
+#%flag
+#% key: w
+#% label: Keep intermediate viewshed maps
+#% guisection: Viewshed settings
 #%end
 
 #%flag
 #% key: c
-#% description: Consider the curvature of the earth (current ellipsoid)
+#% label: Consider the curvature of the earth (current ellipsoid)
 #% guisection: Viewshed settings
 #%end
 
@@ -63,18 +76,28 @@ for details.
 #% type: double
 #% required: no
 #% key_desc: value
-#% description: Observer elevation above the ground (value >= 0.0)
+#% label: Observer elevation above the ground
+#% description: 0.0-
+#% options: 0.0-
 #% answer: 1.5
 #% guisection: Viewshed settings
 #%end
 
+#%option G_OPT_DB_COLUMN
+#% key: range_col
+#% required: no
+#% label: Name of attribute column containing exposure range
+#% guisection: Viewshed settings
+#%end
+
 #%option
-#% key: range
+#% key: range_max
 #% type: double
 #% required: no
 #% key_desc: value
-#% options: 0.0- , -1 for infinity
-#% description: Exposure range
+#% label: Maximum exposure range
+#% description: 0.0- , -1 for infinity
+#% options: 0.0-
 #% answer: 100
 #% guisection: Viewshed settings
 #%end
@@ -83,11 +106,12 @@ for details.
 #% key: function
 #% type: string
 #% required: no
-#% options: no, binary, distance_decay, fuzzy_viewshed, visual_magnitude, solid_angle
 #% key_desc: name
-#% description: Viewshed parametrisation function
+#% label: Viewshed parametrisation function
+#% description: None, Binary, Distance decay, Fuzzy viewshed, Visual magnitude, Solid angle
+#% options: None, Binary, Distance decay, Fuzzy viewshed, Visual magnitude, Solid angle
+#% answer: Distance decay
 #% guisection: Viewshed settings
-#% answer: binary
 #%end
 
 #%option
@@ -95,7 +119,7 @@ for details.
 #% type: double
 #% required: no
 #% key_desc: value
-#% description: Radius around the viewpoint where clarity is perfect. Used in fuzzy viewshed function.
+#% label: Radius around the observer where clarity is perfect. Used in fuzzy viewshed function.
 #% guisection: Viewshed settings
 #% answer: 10
 #%end
@@ -104,26 +128,28 @@ for details.
 #% key: sample_density
 #% type: double
 #% required: no
-#% options: 0.0-100.0
 #% key_desc: value
-#% description: Density of sampling points
+#% label: Density of sampling points
+#% options: 0.0-100.0
+#% description: 0.0-100.0
+#% answer: 25
 #% guisection: Sampling settings
-#% answer: 30
 #%end
 
 #%option
 #% key: seed
 #% type: integer
 #% required: no
-#% options: 0-
 #% key_desc: value
-#% description: Random seed, default [random]
+#% label: Random seed, default [random]
+#% options: 0-
+#% description: 0-
 #% guisection: Sampling settings
 #%end
 
 #%flag
 #% key: r
-#% description: Consider the effect of atmospheric refraction
+#% label: Consider the effect of atmospheric refraction
 #% guisection: Refraction
 #%end
 
@@ -132,8 +158,9 @@ for details.
 #% type: double
 #% required: no
 #% key_desc: value
+#% label: Refraction coefficient
 #% options: 0.0-1.0
-#% description: Refraction coefficient
+#% description: 0.0-1.0
 #% answer: 0.14286
 #% guisection: Refraction
 #%end
@@ -143,8 +170,9 @@ for details.
 #% type: integer
 #% required: no
 #% key_desc: value
+#% label: Amount of memory to use in MB
 #% options: 1-
-#% description: Amount of memory to use in MB
+#% description: 1-
 #% answer: 500
 #%end
 
@@ -153,8 +181,9 @@ for details.
 #% type: integer
 #% required: no
 #% key_desc: value
+#% label: Number of cores to use in parrallelization
+#% description: 1-
 #% options: 1-
-#% description: Number of cores to use in paralellization
 #% answer: 1
 #%end
 
@@ -182,13 +211,10 @@ from grass.pygrass.gis import Mapset
 import grass.script as grass
 from grass.script import utils as grassutils
 
-# enable coordinate systems with various axis orientation (now assuming Y-north, X-east)
-    #      > TODO2 is it so that X is always to the east and Y to the north? I've checked with e.g. s-jtsk and it seems so
-#       > Stefan asks
-
 
 # global variables
 TEMPNAME = grass.tempname(12)
+EXCLUDE = None
 
 def cleanup():
     """Remove raster and vector maps stored in a list"""
@@ -197,6 +223,7 @@ def cleanup():
         flags="f",
         type="raster,vector,region",
         pattern="{}_*".format(TEMPNAME),
+        exclude=EXCLUDE,
         quiet=True,
         stderr=subprocess.PIPE,
     )
@@ -267,7 +294,6 @@ def txt2numpy(
     structured=True,
     ):
     """
-    Taken from #TODO link
     Can be removed when the function is included in grass core.
     Read table-like output from grass modules as Numpy array;
     format instructions are handed down to Numpys genfromtxt function
@@ -353,17 +379,15 @@ def main():
     ## Weights
     r_weights = options['weight']
 
-    use_weights = 0
     if r_weights:
-        use_weights = 1
         gfile_weights = grass.find_file(name=r_weights, element='cell')
         if not gfile_weights['file']:
             grass.fatal('Raster map <%s> not found' % r_weights)
 
-    ## Attribute to store visual impact values
-    a_impact = options['attribute']
+    ## Column to store visual impact values
+    a_impact = options['column']
 
-    #TODO how to check better if attribute already exists and what to do if it exists?
+    #TODO ISSUE 6: how to check better if attribute already exists and what to do if it exists?
     # if a_impact in v_sources_topo[1].attrs.keys():
     #     grass.fatal('Attribute <%s> already exists' % a_impact)
     # else:
@@ -372,7 +396,7 @@ def main():
     #         map=v_sources,
     #         columns='{} double precision'.format(a_impact))
 
-    # TODO how to write results to attribute table? Now written to file
+    # TODO ISSUE 7: how to write results to attribute table? Now written to file
     t_result = "/home/NINA.NO/zofie.cimburova/PhD/Paper4/DATA/tmp_out.csv"
 
     ## Viewshed settings
@@ -383,7 +407,7 @@ def main():
         flagstring += 'c'
 
     v_elevation = float(options['observer_elevation'])
-    range = float(options['range'])
+    range = float(options['range_max'])
     function = options['function']
     b_1 = float(options['b1_distance'])
     refr_coeff = float(options['refraction_coeff'])
@@ -393,25 +417,38 @@ def main():
         grass.fatal('Observer elevation must be larger than or equal to 0.0.')
     if range <= 0.0 and range != -1:
         grass.fatal('Maximum visibility radius must be larger than 0.0.')
-    if function == 'fuzzy_viewshed' and range == -1:
+    if function == 'Fuzzy viewshed' and range == -1:
         grass.fatal('Maximum visibility radius cannot be infinity for fuzzy viewshed approch.')
-    if function == 'fuzzy_viewshed' and b_1 > range:
+    if function == 'Fuzzy viewshed' and b_1 > range:
         grass.fatal(
             'Maximum visibility radius must be larger than radius around the viewpoint where clarity is perfect.'
         )
+
+    # option for binary output instead of cummulative
+    binary_output = False
+    if function == "None":
+        function = "Binary viewshed"
+        binary_output = True
 
     ## Sampling settings
     source_sample_density = float(options['sample_density'])
     seed = options['seed']
 
-    if not seed: # if seed is not set, set it to process number
+    # if seed is not set, set it to process number
+    if not seed:
         seed = os.getpid()
 
     ## Optional
     memory = int(options['memory'])
     cores = int(options['cores'])
 
-
+    ## Keep or delete intermediate map
+    global EXCLUDE
+    if flags['w']:
+        if r_weights:
+            EXCLUDE = "*_exposure_weighted"
+        else:
+            EXCLUDE = "*_exposure"
     # ==========================================================================
     # Region and mask settings
     # ==========================================================================
@@ -426,7 +463,7 @@ def main():
         unset_mask()
 
     # store the current region settings
-    # TODO
+    # TODO ISSUE 9
     # either only grass.script region (grass.run_command(g.region))
     # or environment settings in r.viewshed.exposure (env=c_env)
     # # Create processing environment with region information
@@ -489,14 +526,13 @@ def main():
             counter += 1
 
             # TODO why is source_id not int?
-            source_id = int(source[0])
-            source_ncell = int(source[1])
-            grass.verbose('Processing source {}, {}%'.format(source_id, counter/no_sources*100))
+            source_id = int(source[0]) # cat
+            grass.verbose('Processing source cat {}, {}%'.format(source_id, counter/no_sources*100))
 
             # ==========================================================================
             # Adjust computational region to range around processed exposure source
             # ==========================================================================
-            # TODO - how to do this with current raster approach?
+            # TODO ISSUE #8- how to do this with current raster approach?
             # source_bbox = v_source.bbox()
             #
             # grass.run_command('g.region',
@@ -509,63 +545,40 @@ def main():
             # ==========================================================================
             # Calculate cummulative (parametrised) viewshed
             # ==========================================================================
-            r_exposure = "{}_exposure".format(TEMPNAME)
+            r_exposure = "{}_{}_exposure".format(TEMPNAME,source_id)
 
-            # if only binary output
-            if function == 'no'
-                r_exposure_binary = "{}_exposure_binary".format(TEMPNAME)
+            grass.run_command('r.viewshed.exposure',
+                             dsm = r_dsm,
+                             output = r_exposure,
+                             source = r_sources,
+                             sourcecat = source_id,
+                             observer_elevation = v_elevation,
+                             range = range,
+                             function = function,
+                             b1_distance = b_1,
+                             sample_density = source_sample_density,
+                             refraction_coeff = refr_coeff,
+                             memory = memory,
+                             cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
+                             flags = flagstring,
+                             quiet=True,
+                             overwrite=True)
 
-                grass.run_command('r.viewshed.exposure',
-                                 dsm = r_dsm,
-                                 output = r_exposure_binary,
-                                 source = r_sources,
-                                 sourcecat = source_id,
-                                 observer_elevation = v_elevation,
-                                 range = range,
-                                 function = 'binary',
-                                 b1_distance = b_1,
-                                 sample_density = source_sample_density,
-                                 refraction_coeff = refr_coeff,
-                                 memory = memory,
-                                 cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
-                                 flags = flagstring,
-                                 quiet=True,
-                                 overwrite=True)
-
-                # convert to 0/1
-                expr = '$outmap = if($inmap > 1, 1, $inmap)'
+            # if binary output - covert to 0/1
+            if binary_output:
                 grass.mapcalc(
-                    expr,
-                    inmap=r_exposure_binary,
+                    '$outmap = if($inmap > 1, 1, $inmap)',
+                    inmap=r_exposure,
                     outmap=r_exposure,
                     overwrite=True
                 )
 
-            # else
-            else:
-                grass.run_command('r.viewshed.exposure',
-                                 dsm = r_dsm,
-                                 output = r_temp_viewshed,
-                                 source = r_sources,
-                                 sourcecat = source_id,
-                                 observer_elevation = v_elevation,
-                                 range = range,
-                                 function = function,
-                                 b1_distance = b_1,
-                                 sample_density = source_sample_density,
-                                 refraction_coeff = refr_coeff,
-                                 memory = memory,
-                                 cores = cores, # TODO I think using 1 core is best, since we'll parallelise over this loop
-                                 flags = flagstring,
-                                 quiet=True,
-                                 overwrite=True)
-
-
             # ==========================================================================
             # Multiply exposure by weights map
             # ==========================================================================
-            r_exposure_weighted = "{}_exposure_weighted".format(TEMPNAME)
-            if use_weights:
+            r_exposure_weighted = "{}_{}_exposure_weighted".format(TEMPNAME,source_id)
+
+            if r_weights:
                 grass.mapcalc('$outmap = $map_a * $map_b',
                              map_a=r_exposure,
                              map_b=r_weights,
@@ -573,8 +586,7 @@ def main():
                              overwrite=True,
                              quiet=grass.verbosity() <= 1)
             else:
-                 r_exposure_weighted=r_exposure
-
+                 r_exposure_weighted = r_exposure
 
             # ==========================================================================
             # Summarise raster values and write to attribute table
@@ -588,6 +600,7 @@ def main():
 
             writer.writerow({'source_cat':source_id,
                              'value':sum})
+
 
     # ## Restore original computational region
     # # gsl sets region for gsl tasks
