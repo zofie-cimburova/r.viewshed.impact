@@ -365,21 +365,21 @@ def main():
         grass.fatal('Raster map <%s> not found' % r_dsm)
 
     ## Exposure source
-    v_sources = options['exposure_source'].split("@")[0]
+    v_src = options['exposure_source'].split("@")[0]
     #TODO why can only vector map in current mapset be used?
-    gfile_source = grass.find_file(name=v_sources, element='vector')
+    gfile_source = grass.find_file(name=v_src, element='vector')
     if not gfile_source['file']:
-        grass.fatal('Vector map <%s> not found' % v_sources)
+        grass.fatal('Vector map <%s> not found' % v_src)
 
     # build topology in case it got corrupted
     grass.run_command('v.build',
-                      map=v_sources,
+                      map=v_src,
                       quiet=True)
 
     # convert to pygrass VectorTopo object
-    vt_sources = VectorTopo(v_sources)
-    vt_sources.open('r')
-    no_sources = vt_sources.num_primitive_of('area')
+    v_src_topo = VectorTopo(v_src)
+    v_src_topo.open('r')
+    no_sources = v_src_topo.num_primitive_of('area')
 
     ## Weights
     r_weights = options['weight']
@@ -393,16 +393,14 @@ def main():
     a_impact = options['column']
 
     #TODO ISSUE 6: how to check better if attribute already exists and what to do if it exists?
-    # if a_impact in v_sources_topo[1].attrs.keys():
+    # if a_impact in v_src_topo[1].attrs.keys():
     #     grass.fatal('Attribute <%s> already exists' % a_impact)
     # else:
     #     grass.run_command(
     #         'v.db.addcolumn',
-    #         map=v_sources,
+    #         map=v_src,
     #         columns='{} double precision'.format(a_impact))
 
-    # TODO ISSUE 7: how to write results to attribute table? Now written to file
-    t_result = "/home/NINA.NO/zofie.cimburova/PhD/Paper4/DATA/tmp_out.csv"
 
     ## Viewshed settings
     flagstring = ''
@@ -491,122 +489,129 @@ def main():
     # Iteration over sources
     # ==========================================================================
     counter = 0
+    string = ""
 
-    with open(t_result, "a") as outfile:
-        fieldnames = ['src_cat','value']
-        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-        writer.writeheader()
+    for src in v_src_topo.viter('areas'):
+        ## Display progress info message
+        grass.percent(counter, no_sources, 1)
+        counter += 1
 
-        for vt_source in vt_sources.viter('areas'):
-            ## Display progress info message
-            grass.percent(counter, no_sources, 1)
-            counter += 1
+        ## Only process features which have attribute table
+        #TODO what are the features without attributes?
+        if src.attrs is None:
+            grass.verbose("Problem")
+        else:
+            src_cat = src.attrs['cat']
+            grass.verbose('Processing source cat: {}'.format(src_cat))
 
-            ## Only process features which have attribute table
-            #TODO what are the features without attributes?
-            if vt_source.attrs is None:
-                grass.verbose("Problem")
+            #if src_cat!= 95717:
+            #    continue
+
+            # ==============================================================
+            # Set computational region to range around processed source
+            # ==============================================================
+            # TODO how to account for current settings of computational region?
+            src_bbox = src.bbox()
+
+            grass.run_command('g.region',
+                              align=r_dsm,
+                              n=src_bbox.north + range,
+                              s=src_bbox.south - range,
+                              e=src_bbox.east + range,
+                              w=src_bbox.west - range)
+
+            # ==============================================================
+            # Rasterise processed source
+            # ==============================================================
+            r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
+            grass.run_command(
+                'v.to.rast',
+                input=v_src,
+                type='area',
+                cats=str(src_cat),
+                output=r_source,
+                use='val',
+                overwrite=True,
+                quiet=True
+            )
+
+            # Check if raster contains any values
+            univar1 = grass.read_command(
+                        'r.univar',
+                        map=r_source
+                    )
+            if int(univar1.split('\n')[5].split(':')[1])==0:
+                continue
+
+            # ==============================================================
+            # Calculate cummulative (parametrised) viewshed from source
+            # ==============================================================
+            r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
+            grass.run_command(
+                'r.viewshed.exposure',
+                 dsm = r_dsm,
+                 output = r_exposure,
+                 source = r_source,
+                 observer_elevation = v_elevation,
+                 range = range,
+                 function = function,
+                 b1_distance = b_1,
+                 sample_density = source_sample_density,
+                 refraction_coeff = refr_coeff,
+                 memory = memory,
+                 cores = cores,
+                 flags = flagstring,
+                 quiet=True,
+                 overwrite=True
+             )
+             #TODO how to catch an exception when the tree is too small and
+             #no sampling points are created?
+             #(r.viewshed.exposure throws an error)
+
+            # ==============================================================
+            # Convert to 0/1 if wanted, exclude tree pixels and apply weight
+            # ==============================================================
+            r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
+
+            if binary_output:
+                expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
+
             else:
-                src_cat = vt_source.attrs['cat']
-                grass.verbose('Processing source cat: {}'.format(src_cat))
+                expression = '$out = if(isnull($s),$e * $w,null())'
 
-                # ==============================================================
-                # Set computational region to range around processed source
-                # ==============================================================
-                # TODO how to account for current settings of computational region?
-                src_bbox = vt_source.bbox()
+            grass.mapcalc(
+                expression,
+                out=r_exposure_w,
+                s=r_source,
+                e=r_exposure,
+                w=r_weights,
+                quiet=True,
+                overwrite=True
+            )
 
-                grass.run_command('g.region',
-                                  align=r_dsm,
-                                  n=src_bbox.north + range,
-                                  s=src_bbox.south - range,
-                                  e=src_bbox.east + range,
-                                  w=src_bbox.west - range)
+            # ==============================================================
+            # Summarise raster values and write to string
+            # ==============================================================
+            univar2 = grass.read_command(
+                        'r.univar',
+                        map=r_exposure_w
+                    )
 
-                # ==============================================================
-                # Rasterise processed source
-                # ==============================================================
-                r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
-                grass.run_command(
-                    'v.to.rast',
-                    input=v_sources,
-                    type='area',
-                    cats=str(src_cat),
-                    output=r_source,
-                    use='val',
-                    overwrite=True,
-                    quiet=True
-                )
+            sum = float(univar2.split('\n')[14].split(':')[1])
 
-                # Check if raster contains any values
-                univar = grass.read_command(
-                            'r.univar',
-                            map=r_source
-                        )
-                if int(univar.split('\n')[5].split(':')[1])==0:
-                    continue
+            string += "{},{}\n".format(src_cat,sum)
 
-                # ==============================================================
-                # Calculate cummulative (parametrised) viewshed from source
-                # ==============================================================
-                r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
-                grass.run_command(
-                    'r.viewshed.exposure',
-                     dsm = r_dsm,
-                     output = r_exposure,
-                     source = r_source,
-                     observer_elevation = v_elevation,
-                     range = range,
-                     function = function,
-                     b1_distance = b_1,
-                     sample_density = source_sample_density,
-                     refraction_coeff = refr_coeff,
-                     memory = memory,
-                     cores = cores,
-                     flags = flagstring,
-                     quiet=True,
-                     overwrite=True
-                 )
-
-                # ==============================================================
-                # Convert to 0/1 if wanted, exclude tree pixels and apply weight
-                # ==============================================================
-                r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
-
-                if binary_output:
-                    expression = '$outmap = if(isnull($map_s),if($map_e > 0,$map_w,0),null())'
-
-                else:
-                    expression = '$outmap = if(isnull($map_s),$map_e * $map_w,null())'
-
-                grass.mapcalc(
-                    expression,
-                    outmap=r_exposure_w,
-                    map_s=r_source,
-                    map_e=r_exposure,
-                    map_w=r_weights,
-                    overwrite=True
-                )
-
-                break
-
-                #
-                #
-                # # ==========================================================================
-                # # Summarise raster values and write to attribute table
-                # # ==========================================================================
-                # univar = grass.read_command(
-                #             'r.univar',
-                #             map=r_exposure_weighted
-                #         )
-                #
-                # sum = float(univar.split('\n')[14].split(':')[1])
-                #
-                # writer.writerow({'src_cat':src_cat,
-                #                  'value':sum})
+            break
 
     # close vector access
-    vt_sources.close()
+    v_src_topo.close()
+
+    # ==============================================================
+    # Write computed values to attribute table
+    # ==============================================================
+    #TODO
+    grass.message(string)
+
 
 
     # ## Restore original computational region
@@ -620,10 +625,10 @@ def main():
 
 
     # Remove temporary files and reset mask if needed
-    #cleanup()
+    cleanup()
 
 
 if __name__ == '__main__':
     options, flags = grass.parser()
-    #atexit.register(cleanup)
+    atexit.register(cleanup)
     sys.exit(main())
