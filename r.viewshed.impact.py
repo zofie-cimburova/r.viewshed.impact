@@ -568,50 +568,28 @@ def main():
                      overwrite=True
                  )
 
-                break
-
                 # ==============================================================
                 # Convert to 0/1 if wanted, exclude tree pixels and apply weight
                 # ==============================================================
-                # TODO
-                #
-                # # if binary output - covert to 0/1
-                # if binary_output:
-                #     grass.mapcalc(
-                #         '$outmap = if($inmap > 1, 1, $inmap)',
-                #         inmap=r_exposure,
-                #         outmap=r_exposure,
-                #         overwrite=True
-                #     )
-                #
-                #
-                # # ==========================================================================
-                # # Exclude tree pixels
-                # # ==========================================================================
-                # grass.mapcalc(
-                #     '$outmap = if(isnull($map_s),$map_e,if($map_s==$cat,null(),$map_e))',
-                #     map_e=r_exposure,
-                #     map_s=r_sources,
-                #     cat=src_cat,
-                #     outmap=r_exposure,
-                #     overwrite=True
-                # )
-                #
-                #
-                # # ==========================================================================
-                # # Multiply exposure by weights map
-                # # ==========================================================================
-                # r_exposure_weighted = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
-                #
-                # if r_weights:
-                #     grass.mapcalc('$outmap = $map_a * $map_b',
-                #                  map_a=r_exposure,
-                #                  map_b=r_weights,
-                #                  outmap=r_exposure_weighted,
-                #                  overwrite=True,
-                #                  quiet=grass.verbosity() <= 1)
-                # else:
-                #      r_exposure_weighted = r_exposure
+                r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
+
+                if binary_output:
+                    expression = '$outmap = if(isnull($map_s),if($map_e > 0,$map_w,0),null())'
+
+                else:
+                    expression = '$outmap = if(isnull($map_s),$map_e * $map_w,null())'
+
+                grass.mapcalc(
+                    expression,
+                    outmap=r_exposure_w,
+                    map_s=r_source,
+                    map_e=r_exposure,
+                    map_w=r_weights,
+                    overwrite=True
+                )
+
+                break
+
                 #
                 #
                 # # ==========================================================================
