@@ -188,17 +188,10 @@ for details.
 #%end
 
 import os
-import math
-import time
 import atexit
 import sys
 import subprocess
 import numpy as np
-import csv
-
-
-from grass.pygrass.raster import raster2numpy
-from grass.pygrass.raster import numpy2raster
 
 from grass.pygrass.gis.region import Region
 from grass.pygrass.vector.basic import Bbox
@@ -207,7 +200,6 @@ from grass.pygrass.modules import Module
 from grass.pygrass.raster import RasterRow
 from grass.pygrass.gis import Mapset
 
-
 import grass.script as grass
 from grass.script import utils as grassutils
 
@@ -215,6 +207,20 @@ from grass.script import utils as grassutils
 # global variables
 TEMPNAME = grass.tempname(12)
 EXCLUDE = None
+R_DSM = None
+RANGE = None
+V_SRC = None
+V_ELEVATION = None
+FUNCTION = None
+B_1 = None
+REFR_COEFF = None
+SOURCE_SAMPLE_DENSITY = None
+SEED = None
+MEMORY = None
+CORES = None
+FLGSTRING = None
+R_WEIGHTS = None
+BINARY_OUTPUT = None
 
 def cleanup():
     """Remove raster and vector maps stored in a list"""
@@ -349,6 +355,141 @@ def txt2numpy(
     )
     return np_array
 
+def iteration(iterator):
+    """Iterate over exposure source polygons, rasterise it, compute
+    (paramterised) viewshed, exclude tree pixels, (convert to 0/1),
+    (apply weight), summarise the value
+    :param iterator: VectorTopo.viter object created from exposure source
+    :type iterator:  VectorTopo.viter
+    :return: String of cat,impact value
+    :rtype: string
+    """
+    counter = 0
+    string = ""
+
+    for src in iterator:
+        ## Display progress info message
+        # TODO how to find length of viter?
+        #grass.percent(counter, no_sources, 1)
+        #counter += 1
+
+        ## Only process features which have attribute table
+        #TODO what are the features without attributes?
+        if src.attrs is None:
+            grass.verbose("Problem")
+        else:
+            src_cat = src.attrs['cat']
+            grass.verbose('Processing source cat: {}'.format(src_cat))
+
+            #if src_cat!= 95717:
+            #    continue
+
+            # ==============================================================
+            # Set computational region to range around processed source
+            # ==============================================================
+            # TODO how to account for current settings of computational region?
+            src_bbox = src.bbox()
+
+            grass.run_command(
+                'g.region',
+                align=R_DSM,
+                n=src_bbox.north + RANGE,
+                s=src_bbox.south - RANGE,
+                e=src_bbox.east + RANGE,
+                w=src_bbox.west - RANGE
+            )
+
+            # ==============================================================
+            # Rasterise processed source
+            # ==============================================================
+            r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
+            grass.run_command(
+                'v.to.rast',
+                input=V_SRC,
+                type='area',
+                cats=str(src_cat),
+                output=r_source,
+                use='val',
+                overwrite=True,
+                quiet=True
+            )
+
+            # Check if raster contains any values
+            univar1 = grass.read_command(
+                        'r.univar',
+                        map=r_source
+                    )
+            if int(univar1.split('\n')[5].split(':')[1])==0:
+                continue
+
+            # ==============================================================
+            # Calculate cummulative (parametrised) viewshed from source
+            # ==============================================================
+            r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
+            grass.run_command(
+                'r.viewshed.exposure',
+                 dsm = R_DSM,
+                 output = r_exposure,
+                 source = r_source,
+                 observer_elevation = V_ELEVATION,
+                 range = RANGE,
+                 function = FUNCTION,
+                 b1_distance = B_1,
+                 sample_density = SOURCE_SAMPLE_DENSITY,
+                 refraction_coeff = REFR_COEFF,
+                 seed = SEED,
+                 memory = MEMORY,
+                 cores = CORES,
+                 flags = FLAGSTRING,
+                 quiet=True,
+                 overwrite=True
+             )
+             #TODO how to catch an exception when the tree is too small and
+             #no sampling points are created?
+             #(r.viewshed.exposure throws an error)
+
+            # ==============================================================
+            # Exclude tree pixels, (convert to 0/1), (apply weight)
+            # ==============================================================
+            r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
+
+            if R_WEIGHTS:
+                if BINARY_OUTPUT:
+                    expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
+
+                else:
+                    expression = '$out = if(isnull($s),$e * $w,null())'
+            else:
+                if BINARY_OUTPUT:
+                    expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
+
+                else:
+                    expression = '$out = if(isnull($s),$e,null())'
+
+            grass.mapcalc(
+                expression,
+                out=r_exposure_w,
+                s=r_source,
+                e=r_exposure,
+                w=R_WEIGHTS,
+                quiet=True,
+                overwrite=True
+            )
+
+            # ==============================================================
+            # Summarise raster values and write to string
+            # ==============================================================
+            univar2 = grass.read_command(
+                        'r.univar',
+                        map=r_exposure_w
+                    )
+
+            sum = float(univar2.split('\n')[14].split(':')[1])
+
+            string += "{},{}\n".format(src_cat,sum)
+
+            break
+    return string
 
 def main():
 
@@ -359,35 +500,39 @@ def main():
     # Input data
     # ==========================================================================
     ## DSM
-    r_dsm = options['dsm']
-    gfile_dsm = grass.find_file(name=r_dsm, element='cell')
+    global R_DSM
+    R_DSM = options['dsm']
+    gfile_dsm = grass.find_file(name=R_DSM, element='cell')
     if not gfile_dsm['file']:
-        grass.fatal('Raster map <%s> not found' % r_dsm)
+        grass.fatal('Raster map <%s> not found' % R_DSM)
 
     ## Exposure source
-    v_src = options['exposure_source'].split("@")[0]
+    global V_SRC
+    V_SRC = options['exposure_source'].split("@")[0]
+
     #TODO why can only vector map in current mapset be used?
-    gfile_source = grass.find_file(name=v_src, element='vector')
+    gfile_source = grass.find_file(name=V_SRC, element='vector')
     if not gfile_source['file']:
-        grass.fatal('Vector map <%s> not found' % v_src)
+        grass.fatal('Vector map <%s> not found' % V_SRC)
 
     # build topology in case it got corrupted
     grass.run_command('v.build',
-                      map=v_src,
+                      map=V_SRC,
                       quiet=True)
 
     # convert to pygrass VectorTopo object
-    v_src_topo = VectorTopo(v_src)
+    v_src_topo = VectorTopo(V_SRC)
     v_src_topo.open('r')
     no_sources = v_src_topo.num_primitive_of('area')
 
     ## Weights
-    r_weights = options['weight']
+    global R_WEIGHTS
+    R_WEIGHTS = options['weight']
 
-    if r_weights:
-        gfile_weights = grass.find_file(name=r_weights, element='cell')
+    if R_WEIGHTS:
+        gfile_weights = grass.find_file(name=R_WEIGHTS, element='cell')
         if not gfile_weights['file']:
-            grass.fatal('Raster map <%s> not found' % r_weights)
+            grass.fatal('Raster map <%s> not found' % R_WEIGHTS)
 
     ## Column to store visual impact values
     a_impact = options['column']
@@ -398,60 +543,83 @@ def main():
     # else:
     #     grass.run_command(
     #         'v.db.addcolumn',
-    #         map=v_src,
+    #         map=V_SRC,
     #         columns='{} double precision'.format(a_impact))
 
 
     ## Viewshed settings
-    flagstring = ''
+    global FLAGSTRING
+    FLAGSTRING = ''
     if flags['r']:
-        flagstring += 'r'
+        FLAGSTRING += 'r'
     if flags['c']:
-        flagstring += 'c'
+        FLAGSTRING += 'c'
 
-    v_elevation = float(options['observer_elevation'])
-    range = float(options['range_max'])
-    function = options['function']
-    b_1 = float(options['b1_distance'])
-    refr_coeff = float(options['refraction_coeff'])
+    global V_ELEVATION
+    V_ELEVATION = float(options['observer_elevation'])
+
+    global RANGE
+    RANGE = float(options['range_max'])
+
+    global FUNCTION
+    FUNCTION = options['function']
+
+    global B_1
+    B_1 = float(options['b1_distance'])
+
+    global REFR_COEFF
+    REFR_COEFF = float(options['refraction_coeff'])
 
     # test values
-    if v_elevation < 0.0:
+    if V_ELEVATION < 0.0:
         grass.fatal('Observer elevation must be larger than or equal to 0.0.')
-    if range <= 0.0 and range != -1:
+    if RANGE <= 0.0 and RANGE != -1:
         grass.fatal('Maximum visibility radius must be larger than 0.0.')
-    if function == 'Fuzzy viewshed' and range == -1:
+    if FUNCTION == 'Fuzzy viewshed' and RANGE == -1:
         grass.fatal('Maximum visibility radius cannot be infinity for fuzzy viewshed approch.')
-    if function == 'Fuzzy viewshed' and b_1 > range:
+    if FUNCTION == 'Fuzzy viewshed' and B_1 > RANGE:
         grass.fatal(
             'Maximum visibility radius must be larger than radius around the viewpoint where clarity is perfect.'
         )
 
     # option for binary output instead of cummulative
-    binary_output = False
-    if function == "None":
-        function = "Binary"
-        binary_output = True
+    global BINARY_OUTPUT
+    BINARY_OUTPUT = False
+    if FUNCTION == "None":
+        FUNCTION = "Binary"
+        BINARY_OUTPUT = True
 
     ## Sampling settings
-    source_sample_density = float(options['sample_density'])
-    seed = options['seed']
+    global SOURCE_SAMPLE_DENSITY
+    SOURCE_SAMPLE_DENSITY = float(options['sample_density'])
+
+    global SEED
+    SEED = options['seed']
 
     # if seed is not set, set it to process number
-    if not seed:
-        seed = os.getpid()
+    if not SEED:
+        SEED = os.getpid()
 
     ## Optional
-    memory = int(options['memory'])
-    cores = int(options['cores'])
+    global MEMORY
+    MEMORY = int(options['memory'])
+
+    global CORES
+    CORES = int(options['cores'])
 
     ## Keep or delete intermediate map
     global EXCLUDE
     if flags['w']:
-        if r_weights:
+        if R_WEIGHTS:
             EXCLUDE = "*_exposure_weighted"
         else:
             EXCLUDE = "*_exposure"
+    # else:
+        # #TODO how to use r.external.out with MEM option?
+        # grass.run_command(
+        #     "r.external.out",
+        #     format="MEM"
+        # )
 
     # ==========================================================================
     # Region and mask settings
@@ -486,122 +654,13 @@ def main():
         grass.fatal('Variable north-south and east-west 2D grid resolution is not supported')
 
     # ==========================================================================
-    # Iteration over sources
+    # Iteration over sources and computation of their visual impact
     # ==========================================================================
-    counter = 0
-    string = ""
+    src_iterator = v_src_topo.viter('areas')
+    print(src_iterator)
 
-    for src in v_src_topo.viter('areas'):
-        ## Display progress info message
-        grass.percent(counter, no_sources, 1)
-        counter += 1
-
-        ## Only process features which have attribute table
-        #TODO what are the features without attributes?
-        if src.attrs is None:
-            grass.verbose("Problem")
-        else:
-            src_cat = src.attrs['cat']
-            grass.verbose('Processing source cat: {}'.format(src_cat))
-
-            #if src_cat!= 95717:
-            #    continue
-
-            # ==============================================================
-            # Set computational region to range around processed source
-            # ==============================================================
-            # TODO how to account for current settings of computational region?
-            src_bbox = src.bbox()
-
-            grass.run_command('g.region',
-                              align=r_dsm,
-                              n=src_bbox.north + range,
-                              s=src_bbox.south - range,
-                              e=src_bbox.east + range,
-                              w=src_bbox.west - range)
-
-            # ==============================================================
-            # Rasterise processed source
-            # ==============================================================
-            r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
-            grass.run_command(
-                'v.to.rast',
-                input=v_src,
-                type='area',
-                cats=str(src_cat),
-                output=r_source,
-                use='val',
-                overwrite=True,
-                quiet=True
-            )
-
-            # Check if raster contains any values
-            univar1 = grass.read_command(
-                        'r.univar',
-                        map=r_source
-                    )
-            if int(univar1.split('\n')[5].split(':')[1])==0:
-                continue
-
-            # ==============================================================
-            # Calculate cummulative (parametrised) viewshed from source
-            # ==============================================================
-            r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
-            grass.run_command(
-                'r.viewshed.exposure',
-                 dsm = r_dsm,
-                 output = r_exposure,
-                 source = r_source,
-                 observer_elevation = v_elevation,
-                 range = range,
-                 function = function,
-                 b1_distance = b_1,
-                 sample_density = source_sample_density,
-                 refraction_coeff = refr_coeff,
-                 memory = memory,
-                 cores = cores,
-                 flags = flagstring,
-                 quiet=True,
-                 overwrite=True
-             )
-             #TODO how to catch an exception when the tree is too small and
-             #no sampling points are created?
-             #(r.viewshed.exposure throws an error)
-
-            # ==============================================================
-            # Convert to 0/1 if wanted, exclude tree pixels and apply weight
-            # ==============================================================
-            r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
-
-            if binary_output:
-                expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
-
-            else:
-                expression = '$out = if(isnull($s),$e * $w,null())'
-
-            grass.mapcalc(
-                expression,
-                out=r_exposure_w,
-                s=r_source,
-                e=r_exposure,
-                w=r_weights,
-                quiet=True,
-                overwrite=True
-            )
-
-            # ==============================================================
-            # Summarise raster values and write to string
-            # ==============================================================
-            univar2 = grass.read_command(
-                        'r.univar',
-                        map=r_exposure_w
-                    )
-
-            sum = float(univar2.split('\n')[14].split(':')[1])
-
-            string += "{},{}\n".format(src_cat,sum)
-
-            break
+    string = iteration(src_iterator)
+    print(string)
 
     # close vector access
     v_src_topo.close()
@@ -609,10 +668,8 @@ def main():
     # ==============================================================
     # Write computed values to attribute table
     # ==============================================================
-    #TODO
-    grass.message(string)
-
-
+    #TODO - How to do?
+    #grass.message(string)
 
     # ## Restore original computational region
     # # gsl sets region for gsl tasks
@@ -623,6 +680,11 @@ def main():
     # reg.set_current()
     # reg.set_raster_region()
 
+    # Restore storing in GRASS raster format
+    # if !flags['w']:
+    #     grass.run_command(
+    #         flags="r"
+    #     )
 
     # Remove temporary files and reset mask if needed
     cleanup()
