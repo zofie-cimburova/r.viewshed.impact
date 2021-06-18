@@ -193,6 +193,8 @@ import sys
 import subprocess
 import numpy as np
 
+from multiprocessing import Pool
+
 from grass.pygrass.gis.region import Region
 from grass.pygrass.vector.basic import Bbox
 from grass.pygrass.vector import VectorTopo
@@ -491,6 +493,15 @@ def iteration(iterator):
             break
     return string
 
+
+def f(xx):
+    string = ""
+    for x in xx:
+        string += "{}\n".format(x*x)
+
+    print(string)
+    return string
+
 def main():
 
     # set numpy printing options
@@ -664,6 +675,12 @@ def main():
 
     # close vector access
     v_src_topo.close()
+
+    #pool = Pool(5)
+    #string = pool.map(f, [[1,2,3],[4,5,6],[7,8,9],[10,11,12]])
+    #pool.close()
+    #pool.join()
+    #print(string)
 
     # ==============================================================
     # Write computed values to attribute table
