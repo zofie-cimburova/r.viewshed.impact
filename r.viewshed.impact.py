@@ -357,140 +357,133 @@ def txt2numpy(
     )
     return np_array
 
-def iteration(iterator):
+def iteration(categories):
     """Iterate over exposure source polygons, rasterise it, compute
     (paramterised) viewshed, exclude tree pixels, (convert to 0/1),
     (apply weight), summarise the value
-    :param iterator: VectorTopo.viter object created from exposure source
-    :type iterator:  VectorTopo.viter
+    :param categories: list of polygon categories
+    :type categories:  list
     :return: String of cat,impact value
     :rtype: string
     """
     counter = 0
     string = ""
 
-    for src in iterator:
+    for src_cat in categories:
         ## Display progress info message
         # TODO how to find length of viter?
         #grass.percent(counter, no_sources, 1)
         #counter += 1
 
-        ## Only process features which have attribute table
-        #TODO what are the features without attributes?
-        if src.attrs is None:
-            grass.verbose("Problem")
-        else:
-            src_cat = src.attrs['cat']
-            grass.verbose('Processing source cat: {}'.format(src_cat)) 
+        grass.verbose('Processing source cat: {}'.format(src_cat))
 
-            #if src_cat!= 95717:
-            #    continue
+        # ==============================================================
+        # Set computational region to range around processed source
+        # ==============================================================
+        # TODO how to account for current settings of computational region?
+        # TODO how to set bounding box in this approach of iterating over cats?
 
-            # ==============================================================
-            # Set computational region to range around processed source
-            # ==============================================================
-            # TODO how to account for current settings of computational region?
-            src_bbox = src.bbox()
+        #src_bbox = src.bbox()
 
-            grass.run_command(
-                'g.region',
-                align=R_DSM,
-                n=src_bbox.north + RANGE,
-                s=src_bbox.south - RANGE,
-                e=src_bbox.east + RANGE,
-                w=src_bbox.west - RANGE
-            )
+        #grass.run_command(
+        #    'g.region',
+        #    align=R_DSM,
+        #    n=src_bbox.north + RANGE,
+        #    s=src_bbox.south - RANGE,
+        #    e=src_bbox.east + RANGE,
+        #    w=src_bbox.west - RANGE
+        #)
 
-            # ==============================================================
-            # Rasterise processed source
-            # ==============================================================
-            r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
-            grass.run_command(
-                'v.to.rast',
-                input=V_SRC,
-                type='area',
-                cats=str(src_cat),
-                output=r_source,
-                use='val',
-                overwrite=True,
-                quiet=True
-            )
+        # ==============================================================
+        # Rasterise processed source
+        # ==============================================================
+        r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
+        grass.run_command(
+            'v.to.rast',
+            input=V_SRC,
+            type='area',
+            cats=str(src_cat),
+            output=r_source,
+            use='val',
+            overwrite=True,
+            quiet=True
+        )
 
-            # Check if raster contains any values
-            univar1 = grass.read_command(
-                        'r.univar',
-                        map=r_source
-                    )
-            if int(univar1.split('\n')[5].split(':')[1])==0:
-                continue
+        # Check if raster contains any values
+        univar1 = grass.read_command(
+                    'r.univar',
+                    map=r_source
+                )
+        if int(univar1.split('\n')[5].split(':')[1])==0:
+            grass.verbose("raster contains no values")
+            continue
 
-            # ==============================================================
-            # Calculate cummulative (parametrised) viewshed from source
-            # ==============================================================
-            r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
-            grass.run_command(
-                'r.viewshed.exposure',
-                 dsm = R_DSM,
-                 output = r_exposure,
-                 source = r_source,
-                 observer_elevation = V_ELEVATION,
-                 range = RANGE,
-                 function = FUNCTION,
-                 b1_distance = B_1,
-                 sample_density = SOURCE_SAMPLE_DENSITY,
-                 refraction_coeff = REFR_COEFF,
-                 seed = SEED,
-                 memory = MEMORY,
-                 cores = CORES,
-                 flags = FLAGSTRING,
-                 quiet=True,
-                 overwrite=True
-             )
-             #TODO how to catch an exception when the tree is too small and
-             #no sampling points are created?
-             #(r.viewshed.exposure throws an error)
+        # ==============================================================
+        # Calculate cummulative (parametrised) viewshed from source
+        # ==============================================================
+        r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
+        grass.run_command(
+            'r.viewshed.exposure',
+             dsm = R_DSM,
+             output = r_exposure,
+             source = r_source,
+             observer_elevation = V_ELEVATION,
+             range = RANGE,
+             function = FUNCTION,
+             b1_distance = B_1,
+             sample_density = SOURCE_SAMPLE_DENSITY,
+             refraction_coeff = REFR_COEFF,
+             seed = SEED,
+             memory = MEMORY,
+             cores = 1, # TODO CORES,
+             flags = FLAGSTRING,
+             quiet=True,
+             overwrite=True
+         )
+         #TODO how to catch an exception when the tree is too small and
+         #no sampling points are created?
+         #(r.viewshed.exposure throws an error)
 
-            # ==============================================================
-            # Exclude tree pixels, (convert to 0/1), (apply weight)
-            # ==============================================================
-            r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
+        # ==============================================================
+        # Exclude tree pixels, (convert to 0/1), (apply weight)
+        # ==============================================================
+        r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
 
-            if R_WEIGHTS:
-                if BINARY_OUTPUT:
-                    expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
+        if R_WEIGHTS:
+            if BINARY_OUTPUT:
+                expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
 
-                else:
-                    expression = '$out = if(isnull($s),$e * $w,null())'
             else:
-                if BINARY_OUTPUT:
-                    expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
+                expression = '$out = if(isnull($s),$e * $w,null())'
+        else:
+            if BINARY_OUTPUT:
+                expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
 
-                else:
-                    expression = '$out = if(isnull($s),$e,null())'
+            else:
+                expression = '$out = if(isnull($s),$e,null())'
 
-            grass.mapcalc(
-                expression,
-                out=r_exposure_w,
-                s=r_source,
-                e=r_exposure,
-                w=R_WEIGHTS,
-                quiet=True,
-                overwrite=True
-            )
+        grass.mapcalc(
+            expression,
+            out=r_exposure_w,
+            s=r_source,
+            e=r_exposure,
+            w=R_WEIGHTS,
+            quiet=True,
+            overwrite=True
+        )
 
-            # ==============================================================
-            # Summarise raster values and write to string
-            # ==============================================================
-            univar2 = grass.read_command(
-                        'r.univar',
-                        map=r_exposure_w
-                    )
+        # ==============================================================
+        # Summarise raster values and write to string
+        # ==============================================================
+        univar2 = grass.read_command(
+                    'r.univar',
+                    map=r_exposure_w
+                )
 
-            sum = float(univar2.split('\n')[14].split(':')[1])
+        sum = float(univar2.split('\n')[14].split(':')[1])
 
-            string += "{},{}\n".format(src_cat,sum)
+        string += "{},{}\n".format(src_cat,sum)
 
-            break
     return string
 
 
@@ -530,11 +523,6 @@ def main():
     grass.run_command('v.build',
                       map=V_SRC,
                       quiet=True)
-
-    # convert to pygrass VectorTopo object
-    v_src_topo = VectorTopo(V_SRC)
-    v_src_topo.open('r')
-    no_sources = v_src_topo.num_primitive_of('area')
 
     ## Weights
     global R_WEIGHTS
@@ -667,20 +655,32 @@ def main():
     # ==========================================================================
     # Iteration over sources and computation of their visual impact
     # ==========================================================================
-    src_iterator = v_src_topo.viter('areas')
-    print(src_iterator)
+    # print all categories
+    categories = grass.read_command(
+        'v.category',
+        input = V_SRC,
+        option = 'print'
+    ).split("\n")[:-1]
 
-    string = iteration(src_iterator)
-    print(string)
+    if(len(categories)>0):
+        n=5
+        categories_split=np.array_split(categories,n)
 
-    # close vector access
-    v_src_topo.close()
+        # without multiprocessing
+        string = iteration(categories_split[1])
+        print(string)
 
-    #pool = Pool(5)
-    #string = pool.map(f, [[1,2,3],[4,5,6],[7,8,9],[10,11,12]])
-    #pool.close()
-    #pool.join()
-    #print(string)
+        # with multiprocessing
+        #pool = Pool(n)
+        #string = pool.map(iteration, categories_split)
+        #pool.close()
+        #pool.join()
+        #print(string)
+
+
+    else:
+        #TODO what to do if there are no trees in the map?
+        pass
 
     # ==============================================================
     # Write computed values to attribute table
