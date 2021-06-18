@@ -381,7 +381,7 @@ def iteration(iterator):
             grass.verbose("Problem")
         else:
             src_cat = src.attrs['cat']
-            grass.verbose('Processing source cat: {}'.format(src_cat))
+            grass.verbose('Processing source cat: {}'.format(src_cat)) 
 
             #if src_cat!= 95717:
             #    continue
