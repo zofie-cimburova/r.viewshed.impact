@@ -362,13 +362,12 @@ def iteration(src):
     """Iterate over exposure source polygons, rasterise it, compute
     (paramterised) viewshed, exclude tree pixels, (convert to 0/1),
     (apply weight), summarise the value
-    :param src: VectorTopo.viter object created from exposure source (TODO)
-    :type src:  VectorTopo.viter (TODO)
+    :param src: List of areas
+    :type src:  List
     :return: String of cat,impact value
-    :rtype: string
+    :rtype: String
     """
     counter = 0
-    string = ""
 
     ## Display progress info message
     # TODO how to display progress info message in parallel process?
