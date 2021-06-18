@@ -371,7 +371,7 @@ def iteration(categories):
 
     for src_cat in categories:
         ## Display progress info message
-        # TODO how to find length of viter?
+        # TODO how display progress info message
         #grass.percent(counter, no_sources, 1)
         #counter += 1
 
@@ -381,18 +381,27 @@ def iteration(categories):
         # Set computational region to range around processed source
         # ==============================================================
         # TODO how to account for current settings of computational region?
-        # TODO how to set bounding box in this approach of iterating over cats?
 
-        #src_bbox = src.bbox()
+        extent=grass.read_command(
+            'v.db.select',
+            flags='r',
+            map=V_SRC,
+            where="cat={}".format(src_cat)
+        ).split('\n')[:-1]
 
-        #grass.run_command(
-        #    'g.region',
-        #    align=R_DSM,
-        #    n=src_bbox.north + RANGE,
-        #    s=src_bbox.south - RANGE,
-        #    e=src_bbox.east + RANGE,
-        #    w=src_bbox.west - RANGE
-        #)
+        bbox_n = float(extent[0].split('=')[1])
+        bbox_s = float(extent[1].split('=')[1])
+        bbox_e = float(extent[3].split('=')[1])
+        bbox_w = float(extent[2].split('=')[1])
+
+        grass.run_command(
+            'g.region',
+            align=R_DSM,
+            n=bbox_n + RANGE,
+            s=bbox_s - RANGE,
+            e=bbox_e + RANGE,
+            w=bbox_w - RANGE
+        )
 
         # ==============================================================
         # Rasterise processed source
@@ -486,14 +495,6 @@ def iteration(categories):
 
     return string
 
-
-def f(xx):
-    string = ""
-    for x in xx:
-        string += "{}\n".format(x*x)
-
-    print(string)
-    return string
 
 def main():
 
