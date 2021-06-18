@@ -370,25 +370,18 @@ def iteration(src):
     counter = 0
     string = ""
 
-    grass.verbose("muhehehe")
-
     ## Display progress info message
-    # TODO how to display progree info message?
-    #grass.percent(counter, no_sources, 1)
-    #counter += 1
+    # TODO how to display progress info message in parallel process?
 
     ## Only process features which have attribute table
     #TODO what are the features without attributes?
     if src.attrs is None:
-        grass.verbose("Problem")
-        return
+        grass.verbose("Problem: Feature without category")
+        return ""
 
     else:
         src_cat = src.attrs['cat']
         grass.verbose('Processing source cat: {}'.format(src_cat))
-
-        #if src_cat!= 95717:
-        #    continue
 
         # ==============================================================
         # Set computational region to range around processed source
@@ -426,7 +419,7 @@ def iteration(src):
                     map=r_source
                 )
         if int(univar1.split('\n')[5].split(':')[1])==0:
-            return
+            return ""
 
         # ==============================================================
         # Calculate cummulative (parametrised) viewshed from source
@@ -495,15 +488,6 @@ def iteration(src):
         string = "{},{}\n".format(src_cat,sum)
 
         return string
-
-
-def f(xx):
-    string = ""
-    for x in xx:
-        string += "{}\n".format(x*x)
-
-    print(string)
-    return string
 
 def main():
 
@@ -670,28 +654,22 @@ def main():
     # ==========================================================================
     # Iteration over sources and computation of their visual impact
     # ==========================================================================
-    # TODO
-    # issue - how to multiprocess generator object VectorTopo.viter.<locals>.<genexpr>?
-    # pool.map takes iterables => ValueError: ctypes objects containing pointers cannot be pickled
-    # pool.imapc - also error
+    src_areas = [area for area in v_src_topo.viter('areas')]
 
-    # create iterator from source
-    src_iterator = v_src_topo.viter('areas')
-    #print(type(src_iterator))
+    ## Sequential
+    # string = ""
+    # for src in src_areas:
+    #    string += iteration(src)
 
-    src_iterator_sliced = itertools.islice(src_iterator,None)
-    #print(type(src_iterator_sliced))
+    ## Parallel
+    pool = Pool(5)
 
-    # create pool object
-    a_pool = Pool(5)
-
-    # Run 'iteration' simultaneously
-    string = a_pool.imap(iteration, src_iterator)
-    grass.message(string)
-
-    # close pool
+    # TODO error: ValueError: ctypes objects containing pointers cannot be pickled
+    string = pool.map(iteration, src_areas)
     a_pool.close()
-    #pool.join() #TODO what is this doing?
+    pool.join() #TODO what is this doing?
+
+    grass.message(string)
 
     # close vector access
     v_src_topo.close()
