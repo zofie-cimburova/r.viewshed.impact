@@ -367,126 +367,123 @@ def iteration(src):
     :return: String of cat,impact value
     :rtype: String
     """
-    counter = 0
 
-    ## Display progress info message
+    string="unchanged"
+
+    # Display progress info message
     # TODO how to display progress info message in parallel process?
 
-    ## Only process features which have attribute table
-    #TODO what are the features without attributes?
-    if src.attrs is None:
-        grass.verbose("Problem: Feature without category")
+    # TODO possible issue - multipart geometries
+    src_cat = src[0]
+    src_bbox = src[1]
+
+    grass.verbose('Processing source cat: {}'.format(src_cat))
+
+    # ==============================================================
+    # Set computational region to range around processed source
+    # ==============================================================
+    # TODO how to account for current settings of computational region?
+
+    grass.run_command(
+        'g.region',
+        align=R_DSM,
+        n=src_bbox[0] + RANGE,
+        s=src_bbox[1] - RANGE,
+        e=src_bbox[2] + RANGE,
+        w=src_bbox[3] - RANGE
+    )
+
+    # ==============================================================
+    # Rasterise processed source
+    # ==============================================================
+    r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
+    grass.run_command(
+        'v.to.rast',
+        input=V_SRC,
+        type='area',
+        cats=str(src_cat),
+        output=r_source,
+        use='val',
+        overwrite=True,
+        quiet=True
+    )
+
+    # Check if raster contains any values
+    univar1 = grass.read_command(
+                'r.univar',
+                map=r_source,
+                quiet=True
+            )
+    if int(univar1.split('\n')[5].split(':')[1])==0:
         return ""
 
-    else:
-        src_cat = src.attrs['cat']
-        grass.verbose('Processing source cat: {}'.format(src_cat))
+    # ==============================================================
+    # Calculate cummulative (parametrised) viewshed from source
+    # ==============================================================
+    #r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
+    #grass.run_command(
+    #    'r.viewshed.exposure',
+    #     dsm = R_DSM,
+    #     output = r_exposure,
+    #     source = r_source,
+    #     observer_elevation = V_ELEVATION,
+    #     range = RANGE,
+    #     function = FUNCTION,
+    #     b1_distance = B_1,
+    #     sample_density = SOURCE_SAMPLE_DENSITY,
+    #     refraction_coeff = REFR_COEFF,
+    #     seed = SEED,
+    #     memory = MEMORY,
+    #     cores = CORES,
+    #     flags = FLAGSTRING,
+    #     quiet=True,
+    #     overwrite=True
+    #)
 
-        # ==============================================================
-        # Set computational region to range around processed source
-        # ==============================================================
-        # TODO how to account for current settings of computational region?
-        src_bbox = src.bbox()
+    #TODO how to catch an exception when the tree is too small and
+    #no sampling points are created?
+    #(r.viewshed.exposure throws an error)
 
-        grass.run_command(
-            'g.region',
-            align=R_DSM,
-            n=src_bbox.north + RANGE,
-            s=src_bbox.south - RANGE,
-            e=src_bbox.east + RANGE,
-            w=src_bbox.west - RANGE
-        )
+    # ==============================================================
+    # Exclude tree pixels, (convert to 0/1), (apply weight)
+    # ==============================================================
+    #r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
 
-        # ==============================================================
-        # Rasterise processed source
-        # ==============================================================
-        r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
-        grass.run_command(
-            'v.to.rast',
-            input=V_SRC,
-            type='area',
-            cats=str(src_cat),
-            output=r_source,
-            use='val',
-            overwrite=True,
-            quiet=True
-        )
+    #if R_WEIGHTS:
+    #    if BINARY_OUTPUT:
+    #        expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
+    #    else:
+    #        expression = '$out = if(isnull($s),$e * $w,null())'
+    #else:
+    #    if BINARY_OUTPUT:
+    #        expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
+    #    else:
+    #        expression = '$out = if(isnull($s),$e,null())'
 
-        # Check if raster contains any values
-        univar1 = grass.read_command(
-                    'r.univar',
-                    map=r_source
-                )
-        if int(univar1.split('\n')[5].split(':')[1])==0:
-            return ""
+    #grass.mapcalc(
+    #    expression,
+    #    out=r_exposure_w,
+    #    s=r_source,
+    #    e=r_exposure,
+    #    w=R_WEIGHTS,
+    #    quiet=True,
+    #    overwrite=True
+    #)
 
-        # ==============================================================
-        # Calculate cummulative (parametrised) viewshed from source
-        # ==============================================================
-        r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
-        grass.run_command(
-            'r.viewshed.exposure',
-             dsm = R_DSM,
-             output = r_exposure,
-             source = r_source,
-             observer_elevation = V_ELEVATION,
-             range = RANGE,
-             function = FUNCTION,
-             b1_distance = B_1,
-             sample_density = SOURCE_SAMPLE_DENSITY,
-             refraction_coeff = REFR_COEFF,
-             seed = SEED,
-             memory = MEMORY,
-             cores = CORES,
-             flags = FLAGSTRING,
-             quiet=True,
-             overwrite=True
-         )
-         #TODO how to catch an exception when the tree is too small and
-         #no sampling points are created?
-         #(r.viewshed.exposure throws an error)
+    # ==============================================================
+    # Summarise raster values and write to string
+    # ==============================================================
+    #univar2 = grass.read_command(
+    #            'r.univar',
+    #            map=r_exposure_w
+    #        )
 
-        # ==============================================================
-        # Exclude tree pixels, (convert to 0/1), (apply weight)
-        # ==============================================================
-        r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
+    #sum = float(univar2.split('\n')[14].split(':')[1])
 
-        if R_WEIGHTS:
-            if BINARY_OUTPUT:
-                expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
+    #string = "{},{}\n".format(src_cat,sum)
 
-            else:
-                expression = '$out = if(isnull($s),$e * $w,null())'
-        else:
-            if BINARY_OUTPUT:
-                expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
+    return string
 
-            else:
-                expression = '$out = if(isnull($s),$e,null())'
-
-        grass.mapcalc(
-            expression,
-            out=r_exposure_w,
-            s=r_source,
-            e=r_exposure,
-            w=R_WEIGHTS,
-            quiet=True,
-            overwrite=True
-        )
-
-        # ==============================================================
-        # Summarise raster values and write to string
-        # ==============================================================
-        univar2 = grass.read_command(
-                    'r.univar',
-                    map=r_exposure_w
-                )
-
-        sum = float(univar2.split('\n')[14].split(':')[1])
-
-        string = "{},{}\n".format(src_cat,sum)
-
-        return string
 
 def main():
 
@@ -653,19 +650,16 @@ def main():
     # ==========================================================================
     # Iteration over sources and computation of their visual impact
     # ==========================================================================
-    src_areas = [area for area in v_src_topo.viter('areas')]
+    src_areas = [(area.centroid().cat, area.bbox().nsewtb(tb=False)) for area in v_src_topo.viter("areas") if area.attrs is not None]
 
-    ## Sequential
-    # string = ""
-    # for src in src_areas:
+    # Sequential
+    #for src in src_areas:
     #    string += iteration(src)
 
-    ## Parallel
-    pool = Pool(5)
-
-    # TODO error: ValueError: ctypes objects containing pointers cannot be pickled
+    # Parallel
+    pool = Pool(7)
     string = pool.map(iteration, src_areas)
-    a_pool.close()
+    pool.close()
     pool.join() #TODO what is this doing?
 
     grass.message(string)
