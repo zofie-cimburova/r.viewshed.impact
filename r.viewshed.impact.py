@@ -260,7 +260,7 @@ def unset_mask():
                 stderr=subprocess.DEVNULL,
                 flags="f",
             )
-        except:
+        except Exception:
             pass
 
 
@@ -283,7 +283,7 @@ def reset_mask():
                 stderr=subprocess.DEVNULL,
                 flags="f",
             )
-        except:
+        except Exception:
             pass
 
 
