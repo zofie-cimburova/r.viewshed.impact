@@ -368,8 +368,6 @@ def iteration(src):
     :rtype: String
     """
 
-    string="unchanged"
-
     # Display progress info message
     # TODO how to display progress info message in parallel process?
 
@@ -380,17 +378,18 @@ def iteration(src):
     grass.verbose('Processing source cat: {}'.format(src_cat))
 
     # ==============================================================
-    # Set computational region to range around processed source
+    # Create processing environment with region information
+    # around processed source
     # ==============================================================
     # TODO how to account for current settings of computational region?
 
-    grass.run_command(
-        'g.region',
-        align=R_DSM,
+    c_env = os.environ.copy()
+    c_env["GRASS_REGION"] = grass.region_env(
         n=src_bbox[0] + RANGE,
         s=src_bbox[1] - RANGE,
         e=src_bbox[2] + RANGE,
-        w=src_bbox[3] - RANGE
+        w=src_bbox[3] - RANGE,
+        align=R_DSM
     )
 
     # ==============================================================
@@ -405,40 +404,74 @@ def iteration(src):
         output=r_source,
         use='val',
         overwrite=True,
-        quiet=True
+        quiet=True,
+        env=c_env
     )
 
     # Check if raster contains any values
     univar1 = grass.read_command(
                 'r.univar',
                 map=r_source,
-                quiet=True
+                quiet=True,
+                env=c_env
             )
     if int(univar1.split('\n')[5].split(':')[1])==0:
         return ""
 
     # ==============================================================
+    # Distribute random sampling points (raster)
+    # ==============================================================
+    r_sample = "{}_{}_sample_rast".format(TEMPNAME, src_cat)
+    grass.run_command(
+        "r.random",
+        input=r_source,
+        raster=r_sample,
+        npoints="{}%".format(SOURCE_SAMPLE_DENSITY),
+        flags="b",
+        overwrite=True,
+        quiet=True,
+        env=c_env
+    )
+
+    # ==============================================================
+    # Distribute random sampling points (raster)
+    # ==============================================================
+    # TODO how to supress warning from r.to.vect? (WARNING: Categories will be unique sequence, raster values will be lost.)
+    v_sample = "{}_{}_sample_vect".format(TEMPNAME, src_cat)
+    grass.run_command(
+        "r.to.vect",
+        input=r_sample,
+        output=v_sample,
+        type="point",
+        flags="bt",
+        overwrite=True,
+        quiet=True,
+        env=c_env
+    )
+
+    # ==============================================================
     # Calculate cummulative (parametrised) viewshed from source
     # ==============================================================
-    #r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
-    #grass.run_command(
-    #    'r.viewshed.exposure',
-    #     dsm = R_DSM,
-    #     output = r_exposure,
-    #     source = r_source,
-    #     observer_elevation = V_ELEVATION,
-    #     range = RANGE,
-    #     function = FUNCTION,
-    #     b1_distance = B_1,
-    #     sample_density = SOURCE_SAMPLE_DENSITY,
-    #     refraction_coeff = REFR_COEFF,
-    #     seed = SEED,
-    #     memory = MEMORY,
-    #     cores = CORES,
-    #     flags = FLAGSTRING,
-    #     quiet=True,
-    #     overwrite=True
-    #)
+    r_exposure = "{}_{}_exposure".format(TEMPNAME,src_cat)
+    grass.run_command(
+        'r.viewshed.exposure',
+         dsm = R_DSM,
+         output = r_exposure,
+         sampling_points = v_sample,
+         observer_elevation = V_ELEVATION,
+         range = RANGE,
+         function = FUNCTION,
+         b1_distance = B_1,
+         sample_density = SOURCE_SAMPLE_DENSITY,
+         refraction_coeff = REFR_COEFF,
+         seed = SEED,
+         memory = MEMORY,
+         cores = CORES,
+         flags = FLAGSTRING,
+         overwrite=True,
+         quiet=True,
+         env=c_env
+    )
 
     #TODO how to catch an exception when the tree is too small and
     #no sampling points are created?
@@ -447,40 +480,42 @@ def iteration(src):
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    #r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
+    r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME,src_cat)
 
-    #if R_WEIGHTS:
-    #    if BINARY_OUTPUT:
-    #        expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
-    #    else:
-    #        expression = '$out = if(isnull($s),$e * $w,null())'
-    #else:
-    #    if BINARY_OUTPUT:
-    #        expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
-    #    else:
-    #        expression = '$out = if(isnull($s),$e,null())'
+    if R_WEIGHTS:
+        if BINARY_OUTPUT:
+            expression = '$out = if(isnull($s),if($e > 0,$w,0),null())'
+        else:
+            expression = '$out = if(isnull($s),$e * $w,null())'
+    else:
+        if BINARY_OUTPUT:
+            expression = '$out = if(isnull($s),if($e > 0,1,0),null())'
+        else:
+            expression = '$out = if(isnull($s),$e,null())'
 
-    #grass.mapcalc(
-    #    expression,
-    #    out=r_exposure_w,
-    #    s=r_source,
-    #    e=r_exposure,
-    #    w=R_WEIGHTS,
-    #    quiet=True,
-    #    overwrite=True
-    #)
+    grass.mapcalc(
+        expression,
+        out=r_exposure_w,
+        s=r_source,
+        e=r_exposure,
+        w=R_WEIGHTS,
+        quiet=True,
+        overwrite=True,
+        env=c_env
+    )
 
     # ==============================================================
     # Summarise raster values and write to string
     # ==============================================================
-    #univar2 = grass.read_command(
-    #            'r.univar',
-    #            map=r_exposure_w
-    #        )
+    univar2 = grass.read_command(
+                'r.univar',
+                map=r_exposure_w,
+                env=c_env
+            )
 
-    #sum = float(univar2.split('\n')[14].split(':')[1])
+    sum = float(univar2.split('\n')[14].split(':')[1])
 
-    #string = "{},{}\n".format(src_cat,sum)
+    string = "{},{}\n".format(src_cat,sum)
 
     return string
 
@@ -653,8 +688,10 @@ def main():
     src_areas = [(area.centroid().cat, area.bbox().nsewtb(tb=False)) for area in v_src_topo.viter("areas") if area.attrs is not None]
 
     # Sequential
+    #string=""
     #for src in src_areas:
     #    string += iteration(src)
+    #    break
 
     # Parallel
     pool = Pool(7)
@@ -689,10 +726,10 @@ def main():
     #     )
 
     # Remove temporary files and reset mask if needed
-    cleanup()
+    #cleanup()
 
 
 if __name__ == '__main__':
     options, flags = grass.parser()
-    atexit.register(cleanup)
+    #atexit.register(cleanup)
     sys.exit(main())
