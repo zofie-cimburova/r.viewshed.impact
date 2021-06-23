@@ -1,4 +1,4 @@
-name: Python Flake8 Code Quality
+name: Code quality check
 
 on:
   - push
