@@ -9,7 +9,7 @@ PURPOSE:      Computes visual impact of defined exposure source using weighted p
 
 COPYRIGHT:    (C) 2021 by Zofie Cimburova, Stefan Blumentrath, and the GRASS Development Team
 
-REFERENCES:   TODO1 reference papers used and the paper to be published
+REFERENCES:   TODO reference papers used and the paper to be published
 
 This program is free software under the GNU General Public
 License (>=v2). Read the file COPYING that comes with GRASS
@@ -298,9 +298,6 @@ def iteration(src):
     """
 
     # Display progress info message
-    # TODO how to display progress info message in parallel process?
-
-    # TODO possible issue - multipart geometries
     src_cat = src[0]
     src_bbox = src[1]
 
@@ -310,11 +307,13 @@ def iteration(src):
     # Create processing environment with region information
     # around processed source
     # ==============================================================
-    # TODO how to account for current settings of computational region?
-
     c_env = os.environ.copy()
     c_env["GRASS_REGION"] = grass.region_env(
-        n=src_bbox[0], s=src_bbox[1], e=src_bbox[2], w=src_bbox[3], align=R_DSM
+        n=str(src_bbox[0]),
+        s=str(src_bbox[1]),
+        e=str(src_bbox[2]),
+        w=str(src_bbox[3]),
+        align=R_DSM,
     )
 
     # ==============================================================
@@ -324,7 +323,7 @@ def iteration(src):
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
-        type="area",
+        type="area,centroid",
         cats=str(src_cat),
         output=r_source,
         use="val",
@@ -332,10 +331,6 @@ def iteration(src):
         quiet=True,
         env=c_env,
     )
-
-    # Check if raster contains any values
-    if raster_info(r_source)["max"] is None:
-        return ""
 
     # ==============================================================
     # Distribute random sampling points (raster)
@@ -352,10 +347,14 @@ def iteration(src):
         env=c_env,
     )
 
+    # Check if raster contains any values
+    if raster_info(r_sample)["max"] is None:
+        string = "{},{}\n".format(src_cat, 0)
+        return string
+
     # ==============================================================
-    # Distribute random sampling points (raster)
+    # Distribute random sampling points (vector)
     # ==============================================================
-    # TODO how to supress warning from r.to.vect? (WARNING: Categories will be unique sequence, raster values will be lost.)
     v_sample = "{}_{}_sample_vect".format(TEMPNAME, src_cat)
     grass.run_command(
         "r.to.vect",
@@ -373,10 +372,10 @@ def iteration(src):
     # around processed source
     # ==============================================================
     c_env["GRASS_REGION"] = grass.region_env(
-        n=src_bbox[0] + RANGE,
-        s=src_bbox[1] - RANGE,
-        e=src_bbox[2] + RANGE,
-        w=src_bbox[3] - RANGE,
+        n=str(src_bbox[0] + RANGE),
+        s=str(src_bbox[1] - RANGE),
+        e=str(src_bbox[2] + RANGE),
+        w=str(src_bbox[3] - RANGE),
         align=R_DSM,
     )
 
@@ -403,10 +402,6 @@ def iteration(src):
         quiet=True,
         env=c_env,
     )
-
-    # TODO how to catch an exception when the tree is too small and
-    # no sampling points are created?
-    # (r.viewshed.exposure throws an error)
 
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
@@ -493,7 +488,7 @@ def main():
     # Column to store visual impact values
     # a_impact = options["column"]
 
-    # TODO ISSUE 6: how to check better if attribute already exists and what to do if it exists?
+    # TODO how to check better if attribute already exists and what to do if it exists?
     # if a_impact in v_src_topo[1].attrs.keys():
     #     grass.fatal("Attribute <%s> already exists" % a_impact)
     # else:
@@ -585,14 +580,9 @@ def main():
         unset_mask()
 
     # store the current region settings
-    # TODO ISSUE 9
+    # TODO
     # either only grass.script region (grass.run_command(g.region))
     # or environment settings in r.viewshed.exposure (env=c_env)
-    # # Create processing environment with region information
-    # c_env = os.environ.copy()
-    # c_env["GRASS_REGION"] = grass.region_env(
-    #     n=reg_n, s=reg_s, e=reg_e, w=reg_w
-    # )
     # # grass.use_temp_region()
 
     # get comp. region parameters
