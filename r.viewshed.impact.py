@@ -205,6 +205,7 @@ from grass.pygrass.gis import Mapset
 
 import grass.script as grass
 from grass.script import utils as grassutils
+from grass.script.raster import raster_info
 
 
 # global variables
@@ -409,13 +410,7 @@ def iteration(src):
     )
 
     # Check if raster contains any values
-    univar1 = grass.read_command(
-                'r.univar',
-                map=r_source,
-                quiet=True,
-                env=c_env
-            )
-    if int(univar1.split('\n')[5].split(':')[1])==0:
+    if raster_info(r_source)["max"] is None:
         return ""
 
     # ==============================================================
@@ -526,7 +521,6 @@ def iteration(src):
             )
 
     sum = float(univar2.split('\n')[14].split(':')[1])
-
     string = "{},{}\n".format(src_cat,sum)
 
     return string
@@ -738,10 +732,10 @@ def main():
     #     )
 
     # Remove temporary files and reset mask if needed
-    #cleanup()
+    cleanup()
 
 
 if __name__ == '__main__':
     options, flags = grass.parser()
-    #atexit.register(cleanup)
+    atexit.register(cleanup)
     sys.exit(main())
