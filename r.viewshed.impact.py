@@ -385,10 +385,10 @@ def iteration(src):
 
     c_env = os.environ.copy()
     c_env["GRASS_REGION"] = grass.region_env(
-        n=src_bbox[0] + RANGE,
-        s=src_bbox[1] - RANGE,
-        e=src_bbox[2] + RANGE,
-        w=src_bbox[3] - RANGE,
+        n=src_bbox[0],
+        s=src_bbox[1],
+        e=src_bbox[2],
+        w=src_bbox[3],
         align=R_DSM
     )
 
@@ -447,6 +447,18 @@ def iteration(src):
         overwrite=True,
         quiet=True,
         env=c_env
+    )
+
+    # ==============================================================
+    # Update processing environment with region information
+    # around processed source
+    # ==============================================================
+    c_env["GRASS_REGION"] = grass.region_env(
+        n=src_bbox[0] + RANGE,
+        s=src_bbox[1] - RANGE,
+        e=src_bbox[2] + RANGE,
+        w=src_bbox[3] - RANGE,
+        align=R_DSM
     )
 
     # ==============================================================
@@ -726,10 +738,10 @@ def main():
     #     )
 
     # Remove temporary files and reset mask if needed
-    cleanup()
+    #cleanup()
 
 
 if __name__ == '__main__':
     options, flags = grass.parser()
-    atexit.register(cleanup)
+    #atexit.register(cleanup)
     sys.exit(main())
