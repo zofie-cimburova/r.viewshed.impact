@@ -694,7 +694,7 @@ def main():
     #    break
 
     # Parallel
-    pool = Pool(7)
+    pool = Pool(5)
     string = pool.map(iteration, src_areas)
     pool.close()
     pool.join() #TODO what is this doing?
@@ -726,10 +726,10 @@ def main():
     #     )
 
     # Remove temporary files and reset mask if needed
-    #cleanup()
+    cleanup()
 
 
 if __name__ == '__main__':
     options, flags = grass.parser()
-    #atexit.register(cleanup)
+    atexit.register(cleanup)
     sys.exit(main())
