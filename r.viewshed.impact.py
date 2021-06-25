@@ -177,11 +177,22 @@ for details.
 #%end
 
 #%option
-#% key: cores
+#% key: cores_e
 #% type: integer
 #% required: no
 #% key_desc: value
-#% label: Number of cores to use in parrallelization
+#% label: Number of cores to parallelise r.viewshed.exposure
+#% description: 1-
+#% options: 1-
+#% answer: 1
+#%end
+
+#%option
+#% key: cores_i
+#% type: integer
+#% required: no
+#% key_desc: value
+#% label: Number of cores to parallelise r.viewshed.impact
 #% description: 1-
 #% options: 1-
 #% answer: 1
@@ -215,7 +226,7 @@ REFR_COEFF = None
 SOURCE_SAMPLE_DENSITY = None
 SEED = None
 MEMORY = None
-CORES = None
+CORES_E = None
 FLGSTRING = None
 R_WEIGHTS = None
 BINARY_OUTPUT = None
@@ -396,7 +407,7 @@ def iteration(src):
         refraction_coeff=REFR_COEFF,
         seed=SEED,
         memory=MEMORY,
-        cores=CORES,
+        cores=CORES_E,
         flags=FLAGSTRING,
         overwrite=True,
         quiet=True,
@@ -556,8 +567,10 @@ def main():
     global MEMORY
     MEMORY = int(options["memory"])
 
-    global CORES
-    CORES = int(options["cores"])
+    global CORES_E
+    CORES_E = int(options["cores_e"])
+
+    cores_i = int(options["cores_i"])
 
     # Keep or delete intermediate map
     global EXCLUDE
@@ -611,12 +624,14 @@ def main():
     #    break
 
     # Parallel
-    pool = Pool(5)
+    pool = Pool(cores_i)
     string = pool.map(iteration, src_areas)
     pool.close()
-    pool.join()  # TODO what is this doing?
+    pool.join()
 
     grass.message(string)
+    print(string)
+
 
     # close vector access
     v_src_topo.close()
