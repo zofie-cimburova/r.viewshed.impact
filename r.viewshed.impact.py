@@ -632,7 +632,6 @@ def main():
     grass.message(string)
     print(string)
 
-
     # close vector access
     v_src_topo.close()
 
