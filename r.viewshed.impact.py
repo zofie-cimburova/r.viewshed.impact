@@ -230,7 +230,7 @@ CORES_E = None
 FLGSTRING = None
 R_WEIGHTS = None
 BINARY_OUTPUT = None
-
+REG = None
 
 def cleanup():
     """Remove raster and vector maps stored in a list"""
@@ -315,18 +315,19 @@ def iteration(src):
     grass.verbose("Processing source cat: {}".format(cat))
 
     # tempname
-    suffix = grass.tempname(3)
+    suffix = grass.tempname(3)[4:]
 
     # ==============================================================
     # Create processing environment with region information
     # around processed source
     # ==============================================================
+    # ensure that local region doesn't exceed global region
     env = os.environ.copy()
     env["GRASS_REGION"] = grass.region_env(
-        n=str(bbox[0]),
-        s=str(bbox[1]),
-        e=str(bbox[2]),
-        w=str(bbox[3]),
+        n=str(min(bbox[0],REG.north)),
+        s=str(max(bbox[1],REG.south)),
+        e=str(min(bbox[2],REG.east)),
+        w=str(max(bbox[3],REG.west)),
         align=R_DSM,
     )
 
@@ -334,6 +335,7 @@ def iteration(src):
     # Rasterise processed source
     # ==============================================================
     r_source = "{}_{}_{}_rast".format(TEMPNAME, suffix, cat)
+    grass.verbose(r_source)
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
@@ -386,10 +388,10 @@ def iteration(src):
     # around processed source
     # ==============================================================
     env["GRASS_REGION"] = grass.region_env(
-        n=str(bbox[0] + RANGE),
-        s=str(bbox[1] - RANGE),
-        e=str(bbox[2] + RANGE),
-        w=str(bbox[3] - RANGE),
+        n=str(min(bbox[0] + RANGE,REG.north)),
+        s=str(max(bbox[1] - RANGE,REG.south)),
+        e=str(min(bbox[2] + RANGE,REG.east)),
+        w=str(max(bbox[3] - RANGE,REG.west)),
         align=R_DSM,
     )
 
@@ -595,18 +597,12 @@ def main():
         grass.warning(_("Current MASK is temporarily renamed."))
         unset_mask()
 
-    # store the current region settings
-    # TODO
-    # either only grass.script region (grass.run_command(g.region))
-    # or environment settings in r.viewshed.exposure (env=env)
-    # # grass.use_temp_region()
-
     # get comp. region parameters
-    reg = Region()
-    nsres, ewres = reg.nsres, reg.ewres
+    global REG
+    REG = Region()
 
     # check that nsres equals ewres
-    if nsres != ewres:
+    if REG.nsres != REG.ewres:
         grass.fatal(
             "Variable north-south and east-west 2D grid resolution is not supported"
         )
@@ -644,15 +640,6 @@ def main():
     # TODO - How to do?
     # grass.message(string)
 
-    # # Restore original computational region
-    # # gsl sets region for gsl tasks
-    # grass.del_temp_region()
-    #
-    # # pygrass sets region for pygrass tasks
-    # reg.read()
-    # reg.set_current()
-    # reg.set_raster_region()
-
     # Restore storing in GRASS raster format
     # if !flags["w"]:
     #     grass.run_command(
@@ -660,10 +647,10 @@ def main():
     #     )
 
     # Remove temporary files and reset mask if needed
-    cleanup()
+    #cleanup()
 
 
 if __name__ == "__main__":
     options, flags = grass.parser()
-    atexit.register(cleanup)
+    #atexit.register(cleanup)
     sys.exit(main())
