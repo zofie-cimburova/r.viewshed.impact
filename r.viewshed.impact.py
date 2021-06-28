@@ -232,6 +232,7 @@ R_WEIGHTS = None
 BINARY_OUTPUT = None
 REG = None
 
+
 def cleanup():
     """Remove raster and vector maps stored in a list"""
     grass.run_command(
@@ -324,10 +325,10 @@ def iteration(src):
     # ensure that local region doesn't exceed global region
     env = os.environ.copy()
     env["GRASS_REGION"] = grass.region_env(
-        n=str(min(bbox[0],REG.north)),
-        s=str(max(bbox[1],REG.south)),
-        e=str(min(bbox[2],REG.east)),
-        w=str(max(bbox[3],REG.west)),
+        n=str(min(bbox[0], REG.north)),
+        s=str(max(bbox[1], REG.south)),
+        e=str(min(bbox[2], REG.east)),
+        w=str(max(bbox[3], REG.west)),
         align=R_DSM,
     )
 
@@ -335,7 +336,6 @@ def iteration(src):
     # Rasterise processed source
     # ==============================================================
     r_source = "{}_{}_{}_rast".format(TEMPNAME, suffix, cat)
-    grass.verbose(r_source)
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
@@ -388,10 +388,10 @@ def iteration(src):
     # around processed source
     # ==============================================================
     env["GRASS_REGION"] = grass.region_env(
-        n=str(min(bbox[0] + RANGE,REG.north)),
-        s=str(max(bbox[1] - RANGE,REG.south)),
-        e=str(min(bbox[2] + RANGE,REG.east)),
-        w=str(max(bbox[3] - RANGE,REG.west)),
+        n=str(min(bbox[0] + RANGE, REG.north)),
+        s=str(max(bbox[1] - RANGE, REG.south)),
+        e=str(min(bbox[2] + RANGE, REG.east)),
+        w=str(max(bbox[3] - RANGE, REG.west)),
         align=R_DSM,
     )
 
@@ -600,6 +600,7 @@ def main():
     # get comp. region parameters
     global REG
     REG = Region()
+    bbox = REG.get_bbox()
 
     # check that nsres equals ewres
     if REG.nsres != REG.ewres:
@@ -610,9 +611,10 @@ def main():
     # ==========================================================================
     # Iteration over sources and computation of their visual impact
     # ==========================================================================
+    # ensure that we only iterate over sources within computational region
     src_areas = [
         (area.centroid().cat, area.bbox().nsewtb(tb=False))
-        for area in v_src_topo.viter("areas")
+        for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
         if area.attrs is not None
     ]
 
@@ -647,10 +649,10 @@ def main():
     #     )
 
     # Remove temporary files and reset mask if needed
-    #cleanup()
+    cleanup()
 
 
 if __name__ == "__main__":
     options, flags = grass.parser()
-    #atexit.register(cleanup)
+    atexit.register(cleanup)
     sys.exit(main())
