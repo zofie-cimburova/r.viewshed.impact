@@ -309,44 +309,47 @@ def iteration(src):
     """
 
     # Display progress info message
-    src_cat = src[0]
-    src_bbox = src[1]
+    cat = src[0]
+    bbox = src[1]
 
-    grass.verbose("Processing source cat: {}".format(src_cat))
+    grass.verbose("Processing source cat: {}".format(cat))
+
+    # tempname
+    suffix = grass.tempname(3)
 
     # ==============================================================
     # Create processing environment with region information
     # around processed source
     # ==============================================================
-    c_env = os.environ.copy()
-    c_env["GRASS_REGION"] = grass.region_env(
-        n=str(src_bbox[0]),
-        s=str(src_bbox[1]),
-        e=str(src_bbox[2]),
-        w=str(src_bbox[3]),
+    env = os.environ.copy()
+    env["GRASS_REGION"] = grass.region_env(
+        n=str(bbox[0]),
+        s=str(bbox[1]),
+        e=str(bbox[2]),
+        w=str(bbox[3]),
         align=R_DSM,
     )
 
     # ==============================================================
     # Rasterise processed source
     # ==============================================================
-    r_source = "{}_{}_rast".format(TEMPNAME, src_cat)
+    r_source = "{}_{}_{}_rast".format(TEMPNAME, suffix, cat)
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
         type="area,centroid",
-        cats=str(src_cat),
+        cats=str(cat),
         output=r_source,
         use="val",
         overwrite=True,
         quiet=True,
-        env=c_env,
+        env=env,
     )
 
     # ==============================================================
     # Distribute random sampling points (raster)
     # ==============================================================
-    r_sample = "{}_{}_sample_rast".format(TEMPNAME, src_cat)
+    r_sample = "{}_{}_{}_sample_rast".format(TEMPNAME, suffix, cat)
     grass.run_command(
         "r.random",
         input=r_source,
@@ -355,18 +358,18 @@ def iteration(src):
         flags="b",
         overwrite=True,
         quiet=True,
-        env=c_env,
+        env=env,
     )
 
     # Check if raster contains any values
     if raster_info(r_sample)["max"] is None:
-        string = "{},{}\n".format(src_cat, 0)
+        string = "{},{}\n".format(cat, 0)
         return string
 
     # ==============================================================
     # Distribute random sampling points (vector)
     # ==============================================================
-    v_sample = "{}_{}_sample_vect".format(TEMPNAME, src_cat)
+    v_sample = "{}_{}_{}_sample_vect".format(TEMPNAME, suffix, cat)
     grass.run_command(
         "r.to.vect",
         input=r_sample,
@@ -375,25 +378,25 @@ def iteration(src):
         flags="bt",
         overwrite=True,
         quiet=True,
-        env=c_env,
+        env=env,
     )
 
     # ==============================================================
     # Update processing environment with region information
     # around processed source
     # ==============================================================
-    c_env["GRASS_REGION"] = grass.region_env(
-        n=str(src_bbox[0] + RANGE),
-        s=str(src_bbox[1] - RANGE),
-        e=str(src_bbox[2] + RANGE),
-        w=str(src_bbox[3] - RANGE),
+    env["GRASS_REGION"] = grass.region_env(
+        n=str(bbox[0] + RANGE),
+        s=str(bbox[1] - RANGE),
+        e=str(bbox[2] + RANGE),
+        w=str(bbox[3] - RANGE),
         align=R_DSM,
     )
 
     # ==============================================================
     # Calculate cummulative (parametrised) viewshed from source
     # ==============================================================
-    r_exposure = "{}_{}_exposure".format(TEMPNAME, src_cat)
+    r_exposure = "{}_{}_{}_exposure".format(TEMPNAME, suffix, cat)
     grass.run_command(
         "r.viewshed.exposure",
         dsm=R_DSM,
@@ -411,13 +414,13 @@ def iteration(src):
         flags=FLAGSTRING,
         overwrite=True,
         quiet=True,
-        env=c_env,
+        env=env,
     )
 
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    r_exposure_w = "{}_{}_exposure_weighted".format(TEMPNAME, src_cat)
+    r_exposure_w = "{}_{}_{}_exposure_weighted".format(TEMPNAME, suffix, cat)
 
     if R_WEIGHTS:
         if BINARY_OUTPUT:
@@ -438,7 +441,7 @@ def iteration(src):
         w=R_WEIGHTS,
         quiet=True,
         overwrite=True,
-        env=c_env,
+        env=env,
     )
 
     # ==============================================================
@@ -447,11 +450,11 @@ def iteration(src):
     univar2 = grass.read_command(
         "r.univar",
         map=r_exposure_w,
-        env=c_env,
+        env=env,
     )
 
     sum = float(univar2.split("\n")[14].split(":")[1])
-    string = "{},{}\n".format(src_cat, sum)
+    string = "{},{}\n".format(cat, sum)
 
     return string
 
@@ -595,7 +598,7 @@ def main():
     # store the current region settings
     # TODO
     # either only grass.script region (grass.run_command(g.region))
-    # or environment settings in r.viewshed.exposure (env=c_env)
+    # or environment settings in r.viewshed.exposure (env=env)
     # # grass.use_temp_region()
 
     # get comp. region parameters
