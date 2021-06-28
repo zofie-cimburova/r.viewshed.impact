@@ -348,6 +348,11 @@ def iteration(src):
         env=env,
     )
 
+    # Check if raster contains any values
+    if raster_info(r_source)["max"] is None:
+        string = "{},{}\n".format(cat, 0)
+        return string
+
     # ==============================================================
     # Distribute random sampling points (raster)
     # ==============================================================
