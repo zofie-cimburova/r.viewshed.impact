@@ -16,27 +16,125 @@
 <h4 class="toc">Table of contents</h4>
 <ul class="toc">
     <li class="toc"><a href="#description" class="toc">DESCRIPTION</a></li>
+    <li class="toc"><a href="#notes" class="toc">NOTES</a>
+    <ul class="toc">
+        <li class="toc"><a href="#the-algorithm" class="toc">The algorithm</a></li>
+        <li class="toc"><a href="#memory-and-parallel-processing" class="toc">Memory and parallel processing</a></li>
+    </ul></li>
+    <li class="toc"><a href="#examples" class="toc">EXAMPLES</a></li>
+    <li class="toc"><a href="#todo" class="toc">TODO</a></li>
+    <li class="toc"><a href="#known-issues" class="toc">KNOWN ISSUES</a></li>
+    <li class="toc"><a href="#references" class="toc">REFERENCES</a></li>
     <li class="toc"><a href="#see-also" class="toc">SEE ALSO</a></li>
     <li class="toc"><a href="#authors" class="toc">AUTHORS</a></li>
 </ul>
 </div>
 <h2><a name="description">DESCRIPTION</a></h2>
 
-<em>r.viewshed.impact</em> does what...
-These raster maps are specified as parameters <b>araster</b> and <b>braster</b>.
+<em>r.viewshed.impact</em> computes weighted (optional) visual impact
+of each feature in a given exposure source vector map
+using parametrised (optional) cummulative viewshed analysis.
 
-This is an example of a GRASS GIS module implemeneted in Python.
+<h2><a name="notes">NOTES</a></h2>
+
+<h3><a name="the-algorithm">The algorithm</a></h3>
+The processing workflow of the module consists of four steps that are
+repeated iteratively for each processed feature in the given
+exposure source vector map:
+<ol>
+<li>Random sampling of exposure source with vector points,</li>
+<li>Calculating parametrised (optional) cummulative viewshed
+  from random points using
+  <a href="file:///usr/lib/grass78/docs/html/r.viewshed.exposurehtml">r.viewshed.exposure</a> module,</li>
+<li>Optional multiplication of the (parametrised) viewshed
+  by weights raster,</li>
+<li>Summing the pixel values of the (weighted) (parametrised)
+  viewshed and storing the resulting value in the attribute
+  table of the input exposure source map. </li>
+</ol>
+
+
+<h4>1. Random sampling of the processed feature with vector points</h4>
+The processed feature is randomly sampled by vector points
+in defined sampling density (0-100%; option <b>sample_density</b>).
+In general, lower sampling densities lead to lower
+accuracy, higher uncertainty of the result and lower processing time,
+while higher sampling densities lead to higher accuracy, lower uncertainty of
+the result and longer processing time.
+
+<h4>2. Calculating parametrised (optional) cummulative viewshed</h4>
+The vector sampling points are then used as input into
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.exposure.html">r.viewshed.exposure</a> module
+to calculate (parametrised) cummulative viewshed from of the
+processed feature, using the input digital surface
+model (option <b>dsm</b>).
+The height of the processed feature is considered
+to be 0m above the input digital surface model.
+
+<p>The following options are inherited from
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.exposure.html">r.viewshed.exposure</a> module
+and are thoroughly described in the documentation:
+<b>observer_elevation</b>, <b>function</b>,
+<b>b1_distance</b>, <b>refraction_coeff</b> and flags
+<b>c</b> and <b>r</b>.
+
+<p> The range of visual exposure can be specified either
+  as constant (option <b>range_max</b>) or variable
+  based on attribute value for the processed feature
+  (option <b>range_col</b>).
+
+<h4>3. (Optional) multiplication of the (parametrised) cummulative viewshed
+  by weights raster</h4>
+If the option <b>weight</b> is specified, the (parametrised)
+cummulative viewshed is multiplied by a weight raster map.
+This allows to account for variable visual
+impact at different areas or to exclude specific areas from the
+visual impact computation.
+
+<h4>4. Summarising the pixel values of the (weighted) (parametrised)
+  cummulative viewshed </h4>
+The visual impact of the processed feature is expressed as a
+sum of pixel values of the (weighted) (parametrised) cummulative
+viewshed. The resulting value is stored in an
+attribute table column of the input exposure source map
+(option <b>column</b>). In addion, the resulting visual impact maps
+created in step 3. can optionally be kept (flag <b>w</b>).
+
+<h3><a name="memory-and-parallel-processing">Memory and parallel processing</a></h3>
+Option <b>memory</b> specifies the amount of memory allocated for
+viewshed computation with
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.exposure.html">r.viewshed.exposure</a>.
+
+Option <b>cores_e</b> specifies the number of cores used in
+parallel processing of
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.exposure.html">r.viewshed.exposure</a>.
+
+Option <b>cores_i</b> specifies the number of cores used in
+parallel processing of the iteration over exposure source map
+features.
+
+<h2><a name="examples">EXAMPLES</a></h2>
+TODO
+
+<h2><a name="todo">TODO</a></h2>
+TODO
+
+<h2><a name="known-issues">KNOWN ISSUES</a></h2>
+TODO
+
+<h2><a name="references">REFERENCES</a></h2>
+TODO
 
 <h2><a name="see-also">SEE ALSO</a></h2>
-
 <em>
-<a href="file:///usr/lib/grass78/docs/html/g.region.html">g.region</a>,
-<a href="file:///usr/lib/grass78/docs/html/r.mapcalc.html">r.mapcalc</a>
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.html">r.viewshed</a>,
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.exposure.html">r.viewshed.exposure</a>,
+<a href="file:///usr/lib/grass78/docs/html/r.viewshed.cva.html">r.viewshed.cva</a>
 </em>
 
 <h2><a name="authors">AUTHORS</a></h2>
-
-Zofie Cimburova, <a href="https://geospatial.ncsu.edu/geoforall/">NCSU GeoForAll Lab</a><h2>SOURCE CODE</h2>
+Zofie Cimburova, <a href="https://www.nina.no">NINA</a><br>
+Stefan Blumentrath, <a href="https://www.nina.no">NINA</a><h2>SOURCE CODE</h2>
 <p>Available at: <a href="https://trac.osgeo.org/grass/browser/grass-addons/grass7/raster/r.viewshed.impact">r.viewshed.impact source code</a> (<a href="https://trac.osgeo.org/grass/browser/grass-addons/grass7/raster/r.viewshed.impact">history</a>)</p>
 <hr class="header">
 <p>
