@@ -149,7 +149,7 @@ for details.
 
 #%flag
 #% key: r
-#% label: Consider the effect of atmospheric refraction
+#% label: Consider the effect of atmospheric refraction in viewshed modelling
 #% guisection: Refraction
 #%end
 
