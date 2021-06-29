@@ -2,28 +2,34 @@
 
 <em>r.viewshed.impact</em> computes weighted (optional) visual impact
 of each feature in a given exposure source vector map
-using parametrised (optional) cummulative viewshed analysis.
+using parametrised (optional) cumulative viewshed analysis.
 
 <h2>NOTES</h2>
 
 <h3>The algorithm</h3>
 The processing workflow of the module consists of four steps that are
-repeated iteratively for each processed feature in the given
+repeated iteratively for each feature in the input
 exposure source vector map:
 <ol>
 <li>Random sampling of exposure source with vector points,</li>
-<li>Calculating parametrised (optional) cummulative viewshed
+<li>Calculating parametrised (optional) cumulative viewshed
   from random points using
   <a href="r.viewshed.exposurehtml">r.viewshed.exposure</a> module,</li>
-<li>Optional multiplication of the (parametrised) viewshed
+<li>Optional multiplication of the (parametrised) cumulative  viewshed
   by weights raster,</li>
-<li>Summing the pixel values of the (weighted) (parametrised)
-  viewshed and storing the resulting value in the attribute
+<li>Summarising the pixel values of the resulting visual impact
+  raster and storing the value in the attribute
   table of the input exposure source map. </li>
 </ol>
 
+<div align="center" style="margin: 10px">
+<a href="r_viewshed_impact_workflow.png">
+<img src="r_viewshed_impact_workflow.png" width="485" height="637" alt="r.viewshed.impact workflow" border="0">
+</a><br>
+<i>Processing workflow</i>
+</div>
 
-<h4>1. Random sampling of the processed feature with vector points</h4>
+<h4>1. Random sampling</h4>
 The processed feature is randomly sampled by vector points
 in defined sampling density (0-100%; option <b>sample_density</b>).
 In general, lower sampling densities lead to lower
@@ -31,10 +37,10 @@ accuracy, higher uncertainty of the result and lower processing time,
 while higher sampling densities lead to higher accuracy, lower uncertainty of
 the result and longer processing time.
 
-<h4>2. Calculating parametrised (optional) cummulative viewshed</h4>
+<h4>2. Calculating (parametrised) cumulative viewshed</h4>
 The vector sampling points are then used as input into
 <a href="r.viewshed.exposure.html">r.viewshed.exposure</a> module
-to calculate (parametrised) cummulative viewshed from of the
+to calculate (parametrised) cumulative viewshed from of the
 processed feature, using the input digital surface
 model (option <b>dsm</b>).
 The height of the processed feature is considered
@@ -52,18 +58,16 @@ and are thoroughly described in the documentation:
   based on attribute value for the processed feature
   (option <b>range_col</b>).
 
-<h4>3. (Optional) multiplication of the (parametrised) cummulative viewshed
-  by weights raster</h4>
+<h4>3. (Optional) multiplication by weights raster</h4>
 If the option <b>weight</b> is specified, the (parametrised)
-cummulative viewshed is multiplied by a weight raster map.
+cumulative viewshed is multiplied by a weight raster map.
 This allows to account for variable visual
 impact at different areas or to exclude specific areas from the
 visual impact computation.
 
-<h4>4. Summarising the pixel values of the (weighted) (parametrised)
-  cummulative viewshed </h4>
+<h4>4. Summarising the visual impact value </h4>
 The visual impact of the processed feature is expressed as a
-sum of pixel values of the (weighted) (parametrised) cummulative
+sum of pixel values of the (weighted) (parametrised) cumulative
 viewshed. The resulting value is stored in an
 attribute table column of the input exposure source map
 (option <b>column</b>). In addion, the resulting visual impact maps
