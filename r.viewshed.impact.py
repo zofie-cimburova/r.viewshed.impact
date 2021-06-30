@@ -379,6 +379,7 @@ def iteration(src):
         npoints="{}%".format(SOURCE_SAMPLE_DENSITY),
         flags="b",
         overwrite=True,
+        seed=SEED,
         quiet=True,
         env=env,
     )
@@ -389,7 +390,7 @@ def iteration(src):
         return string
 
     # ==============================================================
-    # Distribute random sampling points (vector)
+    # Vectorize random sampling points
     # ==============================================================
     v_sample = "{}_{}_{}_sample_vect".format(TEMPNAME, cat, suffix)
     p = grass.start_command(
@@ -550,14 +551,17 @@ def main():
     global COLUMN
     COLUMN = options["column"]
 
-    # TODO how to check better if attribute already exists and what to do if it exists?
-    # if a_impact in v_src_topo[1].attrs.keys():
-    #     grass.fatal("Attribute <%s> already exists" % a_impact)
-    # else:
-    #     grass.run_command(
-    #         "v.db.addcolumn",
-    #         map=V_SRC,
-    #         columns="{} double precision".format(a_impact))
+    columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
+
+    if COLUMN in columns:
+        grass.warning("Attribute <%s> already exists and will be overwritten" % COLUMN)
+    else:
+        grass.run_command(
+            "v.db.addcolumn",
+            map=V_SRC,
+            columns="{} double precision".format(COLUMN),
+            quiet=True,
+        )
 
     # Viewshed settings
     global FLAGSTRING
