@@ -102,6 +102,14 @@ for details.
 #% guisection: Viewshed settings
 #%end
 
+#%rules
+#% required: range_col,range_max
+#%end
+
+#%rules
+#% exclusive: range_col,range_max
+#%end
+
 #%option
 #% key: function
 #% type: string
@@ -309,13 +317,19 @@ def iteration(src):
     :rtype: String
     """
 
-    # Display progress info message
     cat = src[0]
     bbox = src[1]
 
+    # Adjust range
+    if len(src) == 3:
+        range = src[2]
+    else:
+        range = RANGE
+
+    # Display progress info message
     grass.verbose("Processing source cat: {}".format(cat))
 
-    # tempname
+    # Tempname
     suffix = grass.tempname(3)[4:]
 
     # ==============================================================
@@ -335,7 +349,7 @@ def iteration(src):
     # ==============================================================
     # Rasterise processed source
     # ==============================================================
-    r_source = "{}_{}_{}_rast".format(TEMPNAME, suffix, cat)
+    r_source = "{}_{}_{}_rast".format(TEMPNAME, cat, suffix)
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
@@ -356,7 +370,7 @@ def iteration(src):
     # ==============================================================
     # Distribute random sampling points (raster)
     # ==============================================================
-    r_sample = "{}_{}_{}_sample_rast".format(TEMPNAME, suffix, cat)
+    r_sample = "{}_{}_{}_sample_rast".format(TEMPNAME, cat, suffix)
     grass.run_command(
         "r.random",
         input=r_source,
@@ -376,7 +390,7 @@ def iteration(src):
     # ==============================================================
     # Distribute random sampling points (vector)
     # ==============================================================
-    v_sample = "{}_{}_{}_sample_vect".format(TEMPNAME, suffix, cat)
+    v_sample = "{}_{}_{}_sample_vect".format(TEMPNAME, cat, suffix)
     p = grass.start_command(
         "r.to.vect",
         input=r_sample,
@@ -399,24 +413,24 @@ def iteration(src):
     # around processed source
     # ==============================================================
     env["GRASS_REGION"] = grass.region_env(
-        n=str(min(bbox[0] + RANGE, REG.north)),
-        s=str(max(bbox[1] - RANGE, REG.south)),
-        e=str(min(bbox[2] + RANGE, REG.east)),
-        w=str(max(bbox[3] - RANGE, REG.west)),
+        n=str(min(bbox[0] + range, REG.north)),
+        s=str(max(bbox[1] - range, REG.south)),
+        e=str(min(bbox[2] + range, REG.east)),
+        w=str(max(bbox[3] - range, REG.west)),
         align=R_DSM,
     )
 
     # ==============================================================
     # Calculate cummulative (parametrised) viewshed from source
     # ==============================================================
-    r_exposure = "{}_{}_{}_exposure".format(TEMPNAME, suffix, cat)
+    r_exposure = "{}_{}_{}_exposure".format(TEMPNAME, cat, suffix)
     grass.run_command(
         "r.viewshed.exposure",
         dsm=R_DSM,
         output=r_exposure,
         sampling_points=v_sample,
         observer_elevation=V_ELEVATION,
-        range=RANGE,
+        range=range,
         function=FUNCTION,
         b1_distance=B_1,
         sample_density=SOURCE_SAMPLE_DENSITY,
@@ -433,7 +447,7 @@ def iteration(src):
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    r_exposure_w = "{}_{}_{}_exposure_weighted".format(TEMPNAME, suffix, cat)
+    r_exposure_w = "{}_{}_{}_exposure_weighted".format(TEMPNAME, cat, suffix)
 
     if R_WEIGHTS:
         if BINARY_OUTPUT:
@@ -537,6 +551,7 @@ def main():
 
     global RANGE
     RANGE = float(options["range_max"])
+    range_col = options["range_col"]
 
     global FUNCTION
     FUNCTION = options["function"]
@@ -623,11 +638,19 @@ def main():
     # Iteration over sources and computation of their visual impact
     # ==========================================================================
     # ensure that we only iterate over sources within computational region
-    src_areas = [
-        (area.centroid().cat, area.bbox().nsewtb(tb=False))
-        for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
-        if area.attrs is not None
-    ]
+    # use range_col if provided
+    if range_col != "":
+        src_areas = [
+            (area.centroid().cat, area.bbox().nsewtb(tb=False), area.attrs[range_col])
+            for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
+            if area.attrs is not None
+        ]
+    else:
+        src_areas = [
+            (area.centroid().cat, area.bbox().nsewtb(tb=False))
+            for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
+            if area.attrs is not None
+        ]
 
     # Sequential
     # string=""
@@ -642,7 +665,6 @@ def main():
     pool.join()
 
     grass.message(string)
-    print(string)
 
     # close vector access
     v_src_topo.close()
