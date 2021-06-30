@@ -393,7 +393,7 @@ def iteration(src):
     # Vectorize random sampling points
     # ==============================================================
     v_sample = "{}_{}_{}_sample_vect".format(TEMPNAME, cat, suffix)
-    p = grass.start_command(
+    grass.run_command(
         "r.to.vect",
         input=r_sample,
         output=v_sample,
@@ -402,13 +402,8 @@ def iteration(src):
         overwrite=True,
         quiet=True,
         env=env,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
     )
-
-    err_msg = str(p.communicate()[1])
-    if "ERROR" in err_msg:
-        grass.fatal(err_msg)
-        # TODO - how to handle this situation? What to do with pool?
 
     # ==============================================================
     # Update processing environment with region information
