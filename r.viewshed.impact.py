@@ -226,6 +226,7 @@ TEMPNAME = grass.tempname(12)
 EXCLUDE = None
 R_DSM = None
 RANGE = None
+RANGE_COL = None
 V_SRC = None
 V_ELEVATION = None
 FUNCTION = None
@@ -317,15 +318,33 @@ def iteration(src):
     :return: Sql command for upade of attribute table with visual impact value
     :rtype: String
     """
-
-    cat = src[0]
-    bbox = src[1]
-
-    # Adjust range
-    if len(src) == 3:
-        range = src[2]
+    # Category, range
+    if RANGE_COL != "":
+        cat = src[0]
+        range = src[1]
     else:
+        cat = src
         range = RANGE
+
+    grass.verbose("category: {}, range: {}".format(cat, range))
+    # Bounding box
+    bbox_string = (
+        grass.read_command(
+            "v.db.select",
+            map=V_SRC,
+            where="cat={}".format(cat),
+            flags="r",
+        )
+        .strip()
+        .split("\n")
+    )
+
+    bbox = [
+        float((bbox_string[0][2:])),
+        float((bbox_string[1][2:])),
+        float((bbox_string[3][2:])),
+        float((bbox_string[2][2:])),
+    ]
 
     # Display progress info message
     grass.verbose("Processing source cat: {}".format(cat))
@@ -577,7 +596,9 @@ def main():
 
     global RANGE
     RANGE = float(options["range_max"])
-    range_col = options["range_col"]
+
+    global RANGE_COL
+    RANGE_COL = options["range_col"]
 
     global FUNCTION
     FUNCTION = options["function"]
@@ -665,16 +686,16 @@ def main():
     # Iteration over sources and computation of their visual impact
     # ==========================================================================
     # ensure that we only iterate over sources within computational region
-    # use range_col if provided
-    if range_col != "":
+    # use RANGE_COL if provided
+    if RANGE_COL != "":
         src_areas = [
-            (area.centroid().cat, area.bbox().nsewtb(tb=False), area.attrs[range_col])
+            (area.centroid().cat, area.attrs[RANGE_COL])
             for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
             if area.attrs is not None
         ]
     else:
         src_areas = [
-            (area.centroid().cat, area.bbox().nsewtb(tb=False))
+            (area.centroid().cat)
             for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
             if area.attrs is not None
         ]
