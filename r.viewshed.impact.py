@@ -522,19 +522,25 @@ def main():
     if not gfile_dsm["file"]:
         grass.fatal("Raster map <%s> not found" % R_DSM)
 
-    # Exposure source
+    # Exposure source vector map
     global V_SRC
     V_SRC = options["exposure_source"].split("@")[0]
+    mapset = options["exposure_source"].split("@")[1]
 
-    # TODO why can only vector map in current mapset be used?
+    # check that the vector map is in current mapset
+    current_mapset = grass.read_command("g.mapset", flags="p").strip()
+    if mapset != current_mapset:
+        grass.fatal("Vector map <%s> must be stored in current mapset" % V_SRC)
+
+    # check that the vector map exists
     gfile_source = grass.find_file(name=V_SRC, element="vector")
     if not gfile_source["file"]:
         grass.fatal("Vector map <%s> not found" % V_SRC)
 
-    # build topology in case it got corrupted
+    # build topology of the vector map in case it got corrupted
     grass.run_command("v.build", map=V_SRC, quiet=True)
 
-    # convert to pygrass VectorTopo object
+    # convert the vector map to pygrass VectorTopo object
     v_src_topo = VectorTopo(V_SRC)
     v_src_topo.open("r")
 
