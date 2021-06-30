@@ -358,9 +358,6 @@ def iteration(src):
         float((bbox_string[2][2:])),
     ]
 
-    # Tempname
-    suffix = grass.tempname(3)[4:]
-
     # ==============================================================
     # Create processing environment with region information
     # around processed source
@@ -378,7 +375,7 @@ def iteration(src):
     # ==============================================================
     # Rasterise processed source
     # ==============================================================
-    r_source = "{}_{}_{}_rast".format(TEMPNAME, cat, suffix)
+    r_source = "{}_{}_rast".format(TEMPNAME, cat)
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
@@ -404,7 +401,7 @@ def iteration(src):
     # ==============================================================
     # Distribute random sampling points (raster)
     # ==============================================================
-    r_sample = "{}_{}_{}_sample_rast".format(TEMPNAME, cat, suffix)
+    r_sample = "{}_{}_sample_rast".format(TEMPNAME, cat)
     grass.run_command(
         "r.random",
         input=r_source,
@@ -430,7 +427,7 @@ def iteration(src):
     # ==============================================================
     # Vectorize random sampling points
     # ==============================================================
-    v_sample = "{}_{}_{}_sample_vect".format(TEMPNAME, cat, suffix)
+    v_sample = "{}_{}_sample_vect".format(TEMPNAME, cat)
     grass.run_command(
         "r.to.vect",
         input=r_sample,
@@ -458,7 +455,7 @@ def iteration(src):
     # ==============================================================
     # Calculate cummulative (parametrised) viewshed from source
     # ==============================================================
-    r_exposure = "{}_{}_{}_exposure".format(TEMPNAME, cat, suffix)
+    r_exposure = "{}_{}_exposure".format(TEMPNAME, cat)
     grass.run_command(
         "r.viewshed.exposure",
         dsm=R_DSM,
@@ -482,7 +479,7 @@ def iteration(src):
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    r_impact = "{}_{}_{}_visual_impact".format(TEMPNAME, cat, suffix)
+    r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
 
     if R_WEIGHTS:
         if BINARY_OUTPUT:
@@ -525,8 +522,6 @@ def iteration(src):
     # ==============================================================
     # Rename visual impact map if it is to be kept
     # ==============================================================
-    # TODO how to distinguish between suffix in new name?
-
     if EXCLUDE == 1:
         new_name = "visual_impact_{}".format(cat)
         grass.run_command(
