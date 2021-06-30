@@ -318,6 +318,7 @@ def iteration(src):
     :return: Sql command for upade of attribute table with visual impact value
     :rtype: String
     """
+
     # Category, range
     if RANGE_COL != "":
         cat = src[0]
@@ -326,7 +327,18 @@ def iteration(src):
         cat = src
         range = RANGE
 
-    grass.verbose("category: {}, range: {}".format(cat, range))
+    # Display progress info message
+    grass.verbose("Processing source cat: {}".format(cat))
+
+    if range is None:
+        sum = 0
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+            )
+        )
+        return sql_command
+
     # Bounding box
     bbox_string = (
         grass.read_command(
@@ -345,9 +357,6 @@ def iteration(src):
         float((bbox_string[3][2:])),
         float((bbox_string[2][2:])),
     ]
-
-    # Display progress info message
-    grass.verbose("Processing source cat: {}".format(cat))
 
     # Tempname
     suffix = grass.tempname(3)[4:]
@@ -384,8 +393,13 @@ def iteration(src):
 
     # Check if raster contains any values
     if raster_info(r_source)["max"] is None:
-        string = "{},{}\n".format(cat, 0)
-        return string
+        sum = 0
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+            )
+        )
+        return sql_command
 
     # ==============================================================
     # Distribute random sampling points (raster)
@@ -405,8 +419,13 @@ def iteration(src):
 
     # Check if raster contains any values
     if raster_info(r_sample)["max"] is None:
-        string = "{},{}\n".format(cat, 0)
-        return string
+        sum = 0
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+            )
+        )
+        return sql_command
 
     # ==============================================================
     # Vectorize random sampling points
@@ -688,17 +707,17 @@ def main():
     # ensure that we only iterate over sources within computational region
     # use RANGE_COL if provided
     if RANGE_COL != "":
-        src_areas = [
+        src_areas = {
             (area.centroid().cat, area.attrs[RANGE_COL])
             for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
             if area.attrs is not None
-        ]
+        }
     else:
-        src_areas = [
+        src_areas = {
             (area.centroid().cat)
             for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
             if area.attrs is not None
-        ]
+        }
 
     # Sequential
     # string=""
