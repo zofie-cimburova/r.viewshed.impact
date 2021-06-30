@@ -239,7 +239,8 @@ FLGSTRING = None
 R_WEIGHTS = None
 BINARY_OUTPUT = None
 REG = None
-# OVERWRITE = None
+OVERWRITE = None
+COLUMN = None
 
 
 def cleanup():
@@ -313,7 +314,7 @@ def iteration(src):
     (apply weight), summarise the value
     :param src: List of areas
     :type src:  List
-    :return: String of cat,impact value
+    :return: Sql command for upade of attribute table with visual impact value
     :rtype: String
     """
 
@@ -481,7 +482,11 @@ def iteration(src):
     )
 
     sum = float(univar.split("\n")[14].split(":")[1])
-    string = "{},{}\n".format(cat, sum)
+    sql_command = (
+        "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+            table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+        )
+    )
 
     # ==============================================================
     # Rename visual impact map if it is to be kept
@@ -493,12 +498,12 @@ def iteration(src):
         grass.run_command(
             "g.rename",
             raster="{},{}".format(r_impact, new_name),
-            overwrite=True,
+            overwrite=OVERWRITE,
             quiet=True,
             env=env,
         )
 
-    return string
+    return sql_command
 
 
 def main():
@@ -542,7 +547,8 @@ def main():
             grass.fatal("Raster map <%s> not found" % R_WEIGHTS)
 
     # Column to store visual impact values
-    # a_impact = options["column"]
+    global COLUMN
+    COLUMN = options["column"]
 
     # TODO how to check better if attribute already exists and what to do if it exists?
     # if a_impact in v_src_topo[1].attrs.keys():
@@ -577,8 +583,8 @@ def main():
     global REFR_COEFF
     REFR_COEFF = float(options["refraction_coeff"])
 
-    # global OVERWRITE
-    # OVERWRITE = options["overwrite"]
+    global OVERWRITE
+    OVERWRITE = grass.overwrite()
 
     # test values
     if V_ELEVATION < 0.0:
@@ -676,11 +682,9 @@ def main():
 
     # Parallel
     pool = Pool(cores_i)
-    string = pool.map(iteration, src_areas)
+    sql_list = pool.map(iteration, src_areas)
     pool.close()
     pool.join()
-
-    grass.message(string)
 
     # close vector access
     v_src_topo.close()
@@ -688,8 +692,11 @@ def main():
     # ==============================================================
     # Write computed values to attribute table
     # ==============================================================
-    # TODO - How to do?
-    # grass.message(string)
+    for sql_command in sql_list:
+        grass.run_command(
+            "db.execute",
+            sql=sql_command,
+        )
 
     # Remove temporary files and reset mask if needed
     cleanup()
