@@ -239,16 +239,16 @@ FLGSTRING = None
 R_WEIGHTS = None
 BINARY_OUTPUT = None
 REG = None
+# OVERWRITE = None
 
 
 def cleanup():
-    """Remove raster and vector maps stored in a list"""
+    """Remove temporary raster and vector maps"""
     grass.run_command(
         "g.remove",
         flags="f",
         type="raster,vector,region",
         pattern="{}_*".format(TEMPNAME),
-        exclude=EXCLUDE,
         quiet=True,
         stderr=subprocess.PIPE,
     )
@@ -447,7 +447,7 @@ def iteration(src):
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    r_exposure_w = "{}_{}_{}_exposure_weighted".format(TEMPNAME, cat, suffix)
+    r_impact = "{}_{}_{}_visual_impact".format(TEMPNAME, cat, suffix)
 
     if R_WEIGHTS:
         if BINARY_OUTPUT:
@@ -462,7 +462,7 @@ def iteration(src):
 
     grass.mapcalc(
         expression,
-        out=r_exposure_w,
+        out=r_impact,
         s=r_source,
         e=r_exposure,
         w=R_WEIGHTS,
@@ -472,16 +472,31 @@ def iteration(src):
     )
 
     # ==============================================================
-    # Summarise raster values and write to string
+    # Summarise impact value and write to string
     # ==============================================================
-    univar2 = grass.read_command(
+    univar = grass.read_command(
         "r.univar",
-        map=r_exposure_w,
+        map=r_impact,
         env=env,
     )
 
-    sum = float(univar2.split("\n")[14].split(":")[1])
+    sum = float(univar.split("\n")[14].split(":")[1])
     string = "{},{}\n".format(cat, sum)
+
+    # ==============================================================
+    # Rename visual impact map if it is to be kept
+    # ==============================================================
+    # TODO how to distinguish between suffix in new name?
+
+    if EXCLUDE == 1:
+        new_name = "visual_impact_{}".format(cat)
+        grass.run_command(
+            "g.rename",
+            raster="{},{}".format(r_impact, new_name),
+            overwrite=True,
+            quiet=True,
+            env=env,
+        )
 
     return string
 
@@ -562,6 +577,9 @@ def main():
     global REFR_COEFF
     REFR_COEFF = float(options["refraction_coeff"])
 
+    # global OVERWRITE
+    # OVERWRITE = options["overwrite"]
+
     # test values
     if V_ELEVATION < 0.0:
         grass.fatal("Observer elevation must be larger than or equal to 0.0.")
@@ -606,11 +624,9 @@ def main():
     # Keep or delete intermediate map
     global EXCLUDE
     if flags["w"]:
-        if R_WEIGHTS:
-            EXCLUDE = "*_exposure_weighted"
-        else:
-            EXCLUDE = "*_exposure"
-    # else:
+        EXCLUDE = 1
+    else:
+        EXCLUDE = 0
 
     # ==========================================================================
     # Region and mask settings
@@ -674,12 +690,6 @@ def main():
     # ==============================================================
     # TODO - How to do?
     # grass.message(string)
-
-    # Restore storing in GRASS raster format
-    # if !flags["w"]:
-    #     grass.run_command(
-    #         flags="r"
-    #     )
 
     # Remove temporary files and reset mask if needed
     cleanup()
