@@ -60,7 +60,7 @@ for details.
 #%end
 
 #%flag
-#% key: w
+#% key: k
 #% label: Keep intermediate viewshed maps
 #% guisection: Viewshed settings
 #%end
@@ -122,7 +122,7 @@ for details.
 #%end
 
 #%option
-#% key: b1_distance
+#% key: b1
 #% type: double
 #% required: no
 #% key_desc: value
@@ -552,7 +552,7 @@ def main():
     if not gfile_dsm["file"]:
         grass.fatal("Raster map <%s> not found" % R_DSM)
 
-    # Exposure source vector map
+    # EXPOSURE SOURCE VECTOR MAP
     global V_SRC
     V_SRC = options["exposure_source"].split("@")[0]
     mapset = options["exposure_source"].split("@")[1]
@@ -592,7 +592,7 @@ def main():
     v_src_topo = VectorTopo(V_SRC)
     v_src_topo.open("r")
 
-    # Weights
+    # WEIGHTS
     global R_WEIGHTS
     R_WEIGHTS = options["weight"]
 
@@ -602,12 +602,13 @@ def main():
         if not gfile_weights["file"]:
             grass.fatal("Raster map <%s> not found" % R_WEIGHTS)
 
-    # Column to store visual impact values
+    # COLUMN TO STORE OUTPUT VISUAL IMPACT VALUE
     global COLUMN
     COLUMN = options["column"]
 
     # check whether the column already exists in attribute table
     columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
+
     if COLUMN in columns:
         grass.warning("Column <%s> already exists and will be overwritten" % COLUMN)
     else:
@@ -618,95 +619,130 @@ def main():
             quiet=True,
         )
 
-    # Viewshed flags
+    # OBSERVER ELEVATION
+    global V_ELEVATION
+    V_ELEVATION = float(options["observer_elevation"])
+
+    if V_ELEVATION < 0.0:
+        grass.fatal("Observer elevation must be larger than or equal to 0.0.")
+
+    # VIEWSHED PARAMETRISATION FUNCTION
+    global FUNCTION
+    FUNCTION = options["function"]
+
+    # BINARY OUTPUT
+    global BINARY_OUTPUT
+    BINARY_OUTPUT = False
+
+    if FUNCTION == "None":
+        FUNCTION = "Binary"
+        BINARY_OUTPUT = True
+
+    # PARAMETER B1 FOR FUZZY VIEWSHED
+    global B_1
+    B_1 = float(options["b1"])
+
+    # EXPOSURE RANGE - VALUE
+    global RANGE
+
+    if options["range"] != "":
+        RANGE = float(options["range"])
+
+        if RANGE <= 0.0 and RANGE != -1:
+            grass.fatal("Exposure range must be larger than 0.0.")
+
+        if RANGE == -1 and FUNCTION == "Fuzzy viewshed":
+            grass.fatal(
+                "Exposure range cannot be infinity for fuzzy viewshed function."
+            )
+
+        if RANGE < B_1 and FUNCTION == "Fuzzy viewshed":
+            grass.fatal("Exposure range must be larger than b1.")
+
+    # EXPOSURE RANGE - COLUMN
+    global RANGE_COL
+
+    if options["range_column"] != "":
+        RANGE_COL = options["range_column"]
+
+        info = grass.read_command("v.info", flags="c", map=V_SRC, quiet=True).strip()
+        info_dict = dict(reversed(i.split("|")) for i in info.split("\n"))
+
+        # check if column exists
+        if RANGE_COL not in info_dict:
+            grass.fatal("Range column <%s> does not exist" % RANGE_COL)
+
+        # check if column is numeric
+        if info_dict[RANGE_COL] not in ("INTEGER", "DOUBLE PRECISION"):
+            grass.fatal("Range column <%s> must be numeric" % RANGE_COL)
+
+        # check that column values are nonnegative
+        min = float(
+            grass.read_command(
+                "v.db.univar",
+                flags="g",
+                map=V_SRC,
+                column=RANGE_COL,
+                quiet=True,
+            )
+            .strip()
+            .split("\n")[1]
+            .split("=")[1]
+        )
+
+        if min < 0:
+            grass.fatal(
+                "Range column <{}> must be nonnegative (min = {})".format(
+                    RANGE_COL, min
+                )
+            )
+
+        if min < B_1 and FUNCTION == "Fuzzy viewshed":
+            grass.fatal("Exposure range must be larger than b1.")
+
+    # VIEWSHED FLAGS
     global FLAGSTRING
     FLAGSTRING = ""
+
     if flags["r"]:
         FLAGSTRING += "r"
     if flags["c"]:
         FLAGSTRING += "c"
 
-    # Observer elevation
-    global V_ELEVATION
-    V_ELEVATION = float(options["observer_elevation"])
-    if V_ELEVATION < 0.0:
-        grass.fatal("Observer elevation must be larger than or equal to 0.0.")
-
-    # Exposure range
-    global RANGE
-    if options["range"] != "":
-        RANGE = float(options["range"])
-        if RANGE <= 0.0 and RANGE != -1:
-            grass.fatal("Exposure range must be larger than 0.0.")
-
-    # Viewshed parametrisation function
-    global FUNCTION
-    FUNCTION = options["function"]
-    if FUNCTION == "Fuzzy viewshed" and RANGE == -1:  # TODO
-        grass.fatal("Exposure range cannot be infinity for fuzzy viewshed function.")
-
-    # Parameter b1 for fuzzy viewshed
-    global B_1
-    B_1 = float(options["b1_distance"])
-    if FUNCTION == "Fuzzy viewshed" and B_1 > RANGE:  # TODO
-        grass.fatal("Exposure range must be larger than b1.")
-
-    # Exposure range column
-    global RANGE_COL
-    RANGE_COL = options["range_column"]
-
-    if RANGE_COL != "":
-        # check if column is numeric
-        info = grass.read_command("v.info", flags="c", map=V_SRC, quiet=True).strip()
-
-        info_dict = dict(reversed(i.split("|")) for i in info.split("\n"))
-        if RANGE_COL not in info_dict:
-            grass.fatal("Range column <%s> does not exist" % RANGE_COL)
-
-        if (info_dict[RANGE_COL]) != "INTEGER" and (
-            info_dict[RANGE_COL]
-        ) != "DOUBLE PRECISION":
-            grass.fatal("Range column <%s> must be numeric" % RANGE_COL)
-
+    # REFRACTION COEFFICIENT
     global REFR_COEFF
     REFR_COEFF = float(options["refraction_coefficient"])
 
-    global OVERWRITE
-    OVERWRITE = grass.overwrite()
-
-    # option for binary output instead of cummulative
-    global BINARY_OUTPUT
-    BINARY_OUTPUT = False
-    if FUNCTION == "None":
-        FUNCTION = "Binary"
-        BINARY_OUTPUT = True
-
-    # Sampling settings
+    # SAMPLING SETTING
     global SOURCE_SAMPLE_DENSITY
     SOURCE_SAMPLE_DENSITY = float(options["sample_density"])
 
+    # SEED
     global SEED
     SEED = options["seed"]
 
-    # if seed is not set, set it to process number
     if not SEED:
         SEED = os.getpid()
 
-    # Optional
+    # MEMORY
     global MEMORY
     MEMORY = int(options["memory"])
 
+    # CORES
     global CORES_E
     CORES_E = int(options["cores_e"])
-
     cores_i = int(options["cores_i"])
 
-    # Keep or delete intermediate map
+    # FLAG TO KEEP TEMPORARY MAPS
     global EXCLUDE
-    if flags["w"]:
+    if flags["k"]:
         EXCLUDE = 1
     else:
         EXCLUDE = 0
+
+    # OVERWRITE OUTPUTS?
+    global OVERWRITE
+    OVERWRITE = grass.overwrite()
 
     # ==========================================================================
     # Region and mask settings
@@ -735,7 +771,7 @@ def main():
     # ==========================================================================
     # ensure that we only iterate over sources within computational region
     # use RANGE_COL if provided
-    if RANGE_COL != "":
+    if RANGE_COL is not None:
         features = {
             (ft.cat, ft.attrs[RANGE_COL])
             for ft in v_src_topo.find_by_bbox.geos(bbox=bbox)
