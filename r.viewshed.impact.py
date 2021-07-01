@@ -32,12 +32,12 @@ for details.
 #% key: exposure_source
 #% label: Name of input map of exposure source locations
 #% required: yes
-#% guidependency: range_layer, range_col
+#% guidependency: range_layer, range_column
 #%end
 
 #%option G_OPT_V_FIELD
 #% key: range_layer
-#% guidependency: range_col
+#% guidependency: range_column
 #%end
 
 #%option
@@ -84,7 +84,7 @@ for details.
 #%end
 
 #%option G_OPT_DB_COLUMN
-#% key: range_col
+#% key: range_column
 #% required: no
 #% label: Name of attribute column containing exposure range
 #% guisection: Viewshed settings
@@ -103,11 +103,11 @@ for details.
 #%end
 
 #%rules
-#% required: range_col,range_max
+#% required: range_column,range_max
 #%end
 
 #%rules
-#% exclusive: range_col,range_max
+#% exclusive: range_column,range_max
 #%end
 
 #%option
@@ -162,7 +162,7 @@ for details.
 #%end
 
 #%option
-#% key: refraction_coeff
+#% key: refraction_coefficient
 #% type: double
 #% required: no
 #% key_desc: value
@@ -313,7 +313,7 @@ def iteration(src):
     """Iterate over exposure source polygons, rasterise it, compute
     (paramterised) viewshed, exclude tree pixels, (convert to 0/1),
     (apply weight), summarise the value
-    :param src: List of areas
+    :param src: List of features
     :type src:  List
     :return: Sql command for upade of attribute table with visual impact value
     :rtype: String
@@ -328,7 +328,7 @@ def iteration(src):
         range = RANGE
 
     # Display progress info message
-    grass.verbose("Processing source cat: {}".format(cat))
+    grass.verbose("Processing cat: {}".format(cat))
 
     if range is None:
         sum = 0
@@ -379,13 +379,14 @@ def iteration(src):
     grass.run_command(
         "v.to.rast",
         input=V_SRC,
-        type="area,centroid",
+        type="point,line,area,centroid",
         cats=str(cat),
         output=r_source,
         use="val",
         overwrite=True,
         quiet=True,
         env=env,
+        stderr=subprocess.DEVNULL,
     )
 
     # Check if raster contains any values
@@ -568,6 +569,20 @@ def main():
     # build topology of the vector map in case it got corrupted
     grass.run_command("v.build", map=V_SRC, quiet=True)
 
+    # check that the vector map contains only point, line and area features
+    info = grass.read_command("v.info", map=V_SRC, flags="t").strip().split("\n")
+    n_areas = int(info[5].split("=")[1])
+    n_boundaries = int(info[3].split("=")[1])
+    n_islands = int(info[6].split("=")[1])
+    n_map3d = int(info[8].split("=")[1])
+
+    if n_areas != n_boundaries:
+        grass.fatal("r.viewshed.impact cannot process boundaries")
+    if n_areas != n_islands:
+        grass.fatal("r.viewshed.impact cannot process islands")
+    if n_map3d > 0:
+        grass.fatal("r.viewshed.impact cannot process map3d")
+
     # convert the vector map to pygrass VectorTopo object
     v_src_topo = VectorTopo(V_SRC)
     v_src_topo.open("r")
@@ -612,7 +627,7 @@ def main():
     RANGE = float(options["range_max"])
 
     global RANGE_COL
-    RANGE_COL = options["range_col"]
+    RANGE_COL = options["range_column"]
 
     global FUNCTION
     FUNCTION = options["function"]
@@ -621,7 +636,7 @@ def main():
     B_1 = float(options["b1_distance"])
 
     global REFR_COEFF
-    REFR_COEFF = float(options["refraction_coeff"])
+    REFR_COEFF = float(options["refraction_coefficient"])
 
     global OVERWRITE
     OVERWRITE = grass.overwrite()
@@ -697,34 +712,29 @@ def main():
         )
 
     # ==========================================================================
-    # Iteration over sources and computation of their visual impact
+    # Iteration over features and computation of their visual impact
     # ==========================================================================
     # ensure that we only iterate over sources within computational region
     # use RANGE_COL if provided
     if RANGE_COL != "":
-        src_areas = {
-            (area.centroid().cat, area.attrs[RANGE_COL])
-            for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
-            if area.attrs is not None
+        features = {
+            (ft.cat, ft.attrs[RANGE_COL])
+            for ft in v_src_topo.find_by_bbox.geos(bbox=bbox)
+            if ft.attrs is not None
         }
     else:
-        src_areas = {
-            (area.centroid().cat)
-            for area in v_src_topo.find_by_bbox.areas(bbox=bbox)
-            if area.attrs is not None
+        features = {
+            (ft.cat)
+            for ft in v_src_topo.find_by_bbox.geos(bbox=bbox)
+            if ft.attrs is not None
         }
 
-    # Sequential
-    # string=""
-    # for src in src_areas:
-    #    string += iteration(src)
-    #    break
-
-    # Parallel
-    pool = Pool(cores_i)
-    sql_list = pool.map(iteration, src_areas)
-    pool.close()
-    pool.join()
+    run_iteration = True
+    if run_iteration:
+        pool = Pool(cores_i)
+        sql_list = pool.map(iteration, features)
+        pool.close()
+        pool.join()
 
     # close vector access
     v_src_topo.close()
@@ -732,11 +742,12 @@ def main():
     # ==============================================================
     # Write computed values to attribute table
     # ==============================================================
-    for sql_command in sql_list:
-        grass.run_command(
-            "db.execute",
-            sql=sql_command,
-        )
+    if run_iteration:
+        for sql_command in sql_list:
+            grass.run_command(
+                "db.execute",
+                sql=sql_command,
+            )
 
     # Remove temporary files and reset mask if needed
     cleanup()
