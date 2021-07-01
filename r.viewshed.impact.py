@@ -91,23 +91,22 @@ for details.
 #%end
 
 #%option
-#% key: range_max
+#% key: range
 #% type: double
 #% required: no
 #% key_desc: value
 #% label: Maximum exposure range
 #% description: 0.0- , -1 for infinity
 #% options: 0.0-
-#% answer: 100
 #% guisection: Viewshed settings
 #%end
 
 #%rules
-#% required: range_column,range_max
+#% required: range_column,range
 #%end
 
 #%rules
-#% exclusive: range_column,range_max
+#% exclusive: range_column,range
 #%end
 
 #%option
@@ -320,7 +319,7 @@ def iteration(src):
     """
 
     # Category, range
-    if RANGE_COL != "":
+    if RANGE is None:
         cat = src[0]
         range = src[1]
     else:
@@ -547,6 +546,8 @@ def main():
     # DSM
     global R_DSM
     R_DSM = options["dsm"]
+
+    # check that the DSM exists
     gfile_dsm = grass.find_file(name=R_DSM, element="cell")
     if not gfile_dsm["file"]:
         grass.fatal("Raster map <%s> not found" % R_DSM)
@@ -559,12 +560,16 @@ def main():
     # check that the vector map is in current mapset
     current_mapset = grass.read_command("g.mapset", flags="p").strip()
     if mapset != current_mapset:
-        grass.fatal("Vector map <%s> must be stored in current mapset" % V_SRC)
+        grass.fatal(
+            "Vector map <{}> must be stored in current mapset <{}>".format(
+                V_SRC, current_mapset
+            )
+        )
 
     # check that the vector map exists
     gfile_source = grass.find_file(name=V_SRC, element="vector")
     if not gfile_source["file"]:
-        grass.fatal("Vector map <%s> not found" % V_SRC)
+        grass.fatal("Vector map <{}@{}> not found".format(V_SRC, mapset))
 
     # build topology of the vector map in case it got corrupted
     grass.run_command("v.build", map=V_SRC, quiet=True)
@@ -591,6 +596,7 @@ def main():
     global R_WEIGHTS
     R_WEIGHTS = options["weight"]
 
+    # check that the weights map exists
     if R_WEIGHTS:
         gfile_weights = grass.find_file(name=R_WEIGHTS, element="cell")
         if not gfile_weights["file"]:
@@ -600,10 +606,10 @@ def main():
     global COLUMN
     COLUMN = options["column"]
 
+    # check whether the column already exists in attribute table
     columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
-
     if COLUMN in columns:
-        grass.warning("Attribute <%s> already exists and will be overwritten" % COLUMN)
+        grass.warning("Column <%s> already exists and will be overwritten" % COLUMN)
     else:
         grass.run_command(
             "v.db.addcolumn",
@@ -612,7 +618,7 @@ def main():
             quiet=True,
         )
 
-    # Viewshed settings
+    # Viewshed flags
     global FLAGSTRING
     FLAGSTRING = ""
     if flags["r"]:
@@ -620,40 +626,53 @@ def main():
     if flags["c"]:
         FLAGSTRING += "c"
 
+    # Observer elevation
     global V_ELEVATION
     V_ELEVATION = float(options["observer_elevation"])
+    if V_ELEVATION < 0.0:
+        grass.fatal("Observer elevation must be larger than or equal to 0.0.")
 
+    # Exposure range
     global RANGE
-    RANGE = float(options["range_max"])
+    if options["range"] != "":
+        RANGE = float(options["range"])
+        if RANGE <= 0.0 and RANGE != -1:
+            grass.fatal("Exposure range must be larger than 0.0.")
 
+    # Viewshed parametrisation function
+    global FUNCTION
+    FUNCTION = options["function"]
+    if FUNCTION == "Fuzzy viewshed" and RANGE == -1:  # TODO
+        grass.fatal("Exposure range cannot be infinity for fuzzy viewshed function.")
+
+    # Parameter b1 for fuzzy viewshed
+    global B_1
+    B_1 = float(options["b1_distance"])
+    if FUNCTION == "Fuzzy viewshed" and B_1 > RANGE:  # TODO
+        grass.fatal("Exposure range must be larger than b1.")
+
+    # Exposure range column
     global RANGE_COL
     RANGE_COL = options["range_column"]
 
-    global FUNCTION
-    FUNCTION = options["function"]
+    if RANGE_COL != "":
+        # check if column is numeric
+        info = grass.read_command("v.info", flags="c", map=V_SRC, quiet=True).strip()
 
-    global B_1
-    B_1 = float(options["b1_distance"])
+        info_dict = dict(reversed(i.split("|")) for i in info.split("\n"))
+        if RANGE_COL not in info_dict:
+            grass.fatal("Range column <%s> does not exist" % RANGE_COL)
+
+        if (info_dict[RANGE_COL]) != "INTEGER" and (
+            info_dict[RANGE_COL]
+        ) != "DOUBLE PRECISION":
+            grass.fatal("Range column <%s> must be numeric" % RANGE_COL)
 
     global REFR_COEFF
     REFR_COEFF = float(options["refraction_coefficient"])
 
     global OVERWRITE
     OVERWRITE = grass.overwrite()
-
-    # test values
-    if V_ELEVATION < 0.0:
-        grass.fatal("Observer elevation must be larger than or equal to 0.0.")
-    if RANGE <= 0.0 and RANGE != -1:
-        grass.fatal("Maximum visibility radius must be larger than 0.0.")
-    if FUNCTION == "Fuzzy viewshed" and RANGE == -1:
-        grass.fatal(
-            "Maximum visibility radius cannot be infinity for fuzzy viewshed approch."
-        )
-    if FUNCTION == "Fuzzy viewshed" and B_1 > RANGE:
-        grass.fatal(
-            "Maximum visibility radius must be larger than radius around the viewpoint where clarity is perfect."
-        )
 
     # option for binary output instead of cummulative
     global BINARY_OUTPUT
@@ -729,7 +748,7 @@ def main():
             if ft.attrs is not None
         }
 
-    run_iteration = True
+    run_iteration = False
     if run_iteration:
         pool = Pool(cores_i)
         sql_list = pool.map(iteration, features)
