@@ -29,7 +29,7 @@ for details.
 #%end
 
 #%option G_OPT_V_MAP
-#% key: exposure_source
+#% key: exposure
 #% label: Name of input map of exposure source locations
 #% required: yes
 #% guidependency: range_layer, range_column
@@ -327,15 +327,18 @@ def iteration(src):
         range = RANGE
 
     # Display progress info message
-    grass.verbose("Processing cat: {}".format(cat))
+    #grass.verbose("Processing cat: {}".format(cat))
 
     if range is None:
         sum = 0
-        sql_command = (
-            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-            )
-        )
+
+        sql_command = "{}-{}-ex1".format(cat, range)
+
+        #sql_command = (
+        #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+        #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+        #    )
+        #)
         return sql_command
 
     # Bounding box
@@ -391,11 +394,14 @@ def iteration(src):
     # Check if raster contains any values
     if raster_info(r_source)["max"] is None:
         sum = 0
-        sql_command = (
-            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-            )
-        )
+
+        sql_command = "{}-{}-ex2".format(cat, range)
+
+        #sql_command = (
+        #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+        #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+        #    )
+        #)
         return sql_command
 
     # ==============================================================
@@ -417,11 +423,14 @@ def iteration(src):
     # Check if raster contains any values
     if raster_info(r_sample)["max"] is None:
         sum = 0
-        sql_command = (
-            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-            )
-        )
+
+        sql_command = "{}-{}-ex3".format(cat, range)
+
+        #sql_command = (
+        #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+        #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+        #    )
+        #)
         return sql_command
 
     # ==============================================================
@@ -476,62 +485,71 @@ def iteration(src):
         env=env,
     )
 
+    grass.run_command(
+        "g.remove",
+        flags="f",
+        type="raster,vector",
+        name="{},{},{}".format(r_source,r_sample,v_sample),
+        quiet=True,
+        stderr=subprocess.PIPE,
+    )
+
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
+    #r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
 
-    if R_WEIGHTS:
-        if BINARY_OUTPUT:
-            expression = "$out = if(isnull($s),if($e > 0,$w,0),null())"
-        else:
-            expression = "$out = if(isnull($s),$e * $w,null())"
-    else:
-        if BINARY_OUTPUT:
-            expression = "$out = if(isnull($s),if($e > 0,1,0),null())"
-        else:
-            expression = "$out = if(isnull($s),$e,null())"
+    #if R_WEIGHTS:
+    #    if BINARY_OUTPUT:
+    #        expression = "$out = if(isnull($s),if($e > 0,$w,0),null())"
+    #    else:
+    #        expression = "$out = if(isnull($s),$e * $w,null())"
+    #else:
+    #    if BINARY_OUTPUT:
+    #        expression = "$out = if(isnull($s),if($e > 0,1,0),null())"
+    #    else:
+    #        expression = "$out = if(isnull($s),$e,null())"
 
-    grass.mapcalc(
-        expression,
-        out=r_impact,
-        s=r_source,
-        e=r_exposure,
-        w=R_WEIGHTS,
-        quiet=True,
-        overwrite=True,
-        env=env,
-    )
+    #grass.mapcalc(
+    #    expression,
+    #    out=r_impact,
+    #    s=r_source,
+    #    e=r_exposure,
+    #    w=R_WEIGHTS,
+    #    quiet=True,
+    #    overwrite=True,
+    #    env=env,
+    #)
 
     # ==============================================================
     # Summarise impact value and write to string
     # ==============================================================
-    univar = grass.read_command(
-        "r.univar",
-        map=r_impact,
-        env=env,
-    )
+    #univar = grass.read_command(
+    #    "r.univar",
+    #    map=r_impact,
+    #    env=env,
+    #)
 
-    sum = float(univar.split("\n")[14].split(":")[1])
-    sql_command = (
-        "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-            table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-        )
-    )
+    #sum = float(univar.split("\n")[14].split(":")[1])
+    #sql_command = (
+    #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+    #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+    #    )
+    #)
 
     # ==============================================================
     # Rename visual impact map if it is to be kept
     # ==============================================================
-    if EXCLUDE == 1:
-        new_name = "visual_impact_{}".format(cat)
-        grass.run_command(
-            "g.rename",
-            raster="{},{}".format(r_impact, new_name),
-            overwrite=OVERWRITE,
-            quiet=True,
-            env=env,
-        )
-
+    #if EXCLUDE == 1:
+    #    new_name = "visual_impact_{}".format(cat)
+    #    grass.run_command(
+    #        "g.rename",
+    #        raster="{},{}".format(r_impact, new_name),
+    #        overwrite=OVERWRITE,
+    #        quiet=True,
+    #        env=env,
+    #    )
+    sql_command = "{}-{}-OK".format(cat, range)
     return sql_command
 
 
@@ -554,8 +572,8 @@ def main():
 
     # EXPOSURE SOURCE VECTOR MAP
     global V_SRC
-    V_SRC = options["exposure_source"].split("@")[0]
-    mapset = options["exposure_source"].split("@")[1]
+    V_SRC = options["exposure"].split("@")[0]
+    mapset = options["exposure"].split("@")[1]
 
     # check that the vector map is in current mapset
     current_mapset = grass.read_command("g.mapset", flags="p").strip()
@@ -581,12 +599,12 @@ def main():
     n_islands = int(info[6].split("=")[1])
     n_map3d = int(info[8].split("=")[1])
 
-    if n_areas != n_boundaries:
-        grass.fatal("r.viewshed.impact cannot process boundaries")
-    if n_areas != n_islands:
-        grass.fatal("r.viewshed.impact cannot process islands")
-    if n_map3d > 0:
-        grass.fatal("r.viewshed.impact cannot process map3d")
+    #if n_areas != n_boundaries:
+    #    grass.fatal("r.viewshed.impact cannot process boundaries")
+    #if n_areas != n_islands:
+    #    grass.fatal("r.viewshed.impact cannot process islands")
+    #if n_map3d > 0:
+    #    grass.fatal("r.viewshed.impact cannot process map3d")
 
     # convert the vector map to pygrass VectorTopo object
     v_src_topo = VectorTopo(V_SRC)
@@ -784,7 +802,9 @@ def main():
             if ft.attrs is not None
         }
 
-    run_iteration = False
+    grass.verbose("no. trees: {}".format(len(features)))
+
+    run_iteration = True
     if run_iteration:
         pool = Pool(cores_i)
         sql_list = pool.map(iteration, features)
@@ -794,10 +814,13 @@ def main():
     # close vector access
     v_src_topo.close()
 
+    grass.verbose(sql_list)
     # ==============================================================
     # Write computed values to attribute table
     # ==============================================================
-    if run_iteration:
+    grass.verbose("Writing output to attribute table...")
+    write_result = False
+    if write_result:
         for sql_command in sql_list:
             grass.run_command(
                 "db.execute",
