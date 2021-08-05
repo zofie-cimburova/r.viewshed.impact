@@ -115,9 +115,9 @@ for details.
 #% required: no
 #% key_desc: name
 #% label: Viewshed parametrisation function
-#% description: None, Binary, Distance decay, Fuzzy viewshed, Visual magnitude, Solid angle
-#% options: None, Binary, Distance decay, Fuzzy viewshed, Visual magnitude, Solid angle
-#% answer: Distance decay
+#% description: None, Binary, Distance_decay, Fuzzy_viewshed, Visual_magnitude, Solid_angle
+#% options: None, Binary, Distance_decay, Fuzzy_viewshed, Visual_magnitude, Solid_angle
+#% answer: Distance_decay
 #% guisection: Viewshed settings
 #%end
 
@@ -209,7 +209,6 @@ import os
 import atexit
 import sys
 import subprocess
-import numpy as np
 import grass.script as grass
 
 from multiprocessing import Pool
@@ -325,20 +324,18 @@ def iteration(src):
     else:
         cat = src
         range = RANGE
-
-    # Display progress info message
-    #grass.verbose("Processing cat: {}".format(cat))
+    #
+    # if cat not in [97,263,460]:
+    #     return ""
 
     if range is None:
         sum = 0
 
-        sql_command = "{}-{}-ex1".format(cat, range)
-
-        #sql_command = (
-        #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-        #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-        #    )
-        #)
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+            )
+        )
         return sql_command
 
     # Bounding box
@@ -395,13 +392,11 @@ def iteration(src):
     if raster_info(r_source)["max"] is None:
         sum = 0
 
-        sql_command = "{}-{}-ex2".format(cat, range)
-
-        #sql_command = (
-        #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-        #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-        #    )
-        #)
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+            )
+        )
         return sql_command
 
     # ==============================================================
@@ -424,13 +419,11 @@ def iteration(src):
     if raster_info(r_sample)["max"] is None:
         sum = 0
 
-        sql_command = "{}-{}-ex3".format(cat, range)
-
-        #sql_command = (
-        #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-        #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-        #    )
-        #)
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+            )
+        )
         return sql_command
 
     # ==============================================================
@@ -447,6 +440,15 @@ def iteration(src):
         quiet=True,
         env=env,
         stderr=subprocess.DEVNULL,
+    )
+
+    grass.run_command(
+        "g.remove",
+        flags="f",
+        type="raster",
+        name=r_sample,
+        quiet=True,
+        stderr=subprocess.PIPE,
     )
 
     # ==============================================================
@@ -488,8 +490,8 @@ def iteration(src):
     grass.run_command(
         "g.remove",
         flags="f",
-        type="raster,vector",
-        name="{},{},{}".format(r_source,r_sample,v_sample),
+        type="vector",
+        name=v_sample,
         quiet=True,
         stderr=subprocess.PIPE,
     )
@@ -497,66 +499,96 @@ def iteration(src):
     # ==============================================================
     # Exclude tree pixels, (convert to 0/1), (apply weight)
     # ==============================================================
-    #r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
+    r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
 
-    #if R_WEIGHTS:
-    #    if BINARY_OUTPUT:
-    #        expression = "$out = if(isnull($s),if($e > 0,$w,0),null())"
-    #    else:
-    #        expression = "$out = if(isnull($s),$e * $w,null())"
-    #else:
-    #    if BINARY_OUTPUT:
-    #        expression = "$out = if(isnull($s),if($e > 0,1,0),null())"
-    #    else:
-    #        expression = "$out = if(isnull($s),$e,null())"
+    if R_WEIGHTS:
+        if BINARY_OUTPUT:
+            expression = (
+                "$out = if(isnull($s),if(isnull($e),null(),if($e!=0,$w,0*$w)),null())"
+            )
+        else:
+            expression = "$out = if(isnull($s),$e * $w,null())"
+    else:
+        if BINARY_OUTPUT:
+            expression = (
+                "$out = if(isnull($s),if(isnull($e),null(),if($e!=0,1,0)),null())"
+            )
+        else:
+            expression = "$out = if(isnull($s),$e,null())"
 
-    #grass.mapcalc(
-    #    expression,
-    #    out=r_impact,
-    #    s=r_source,
-    #    e=r_exposure,
-    #    w=R_WEIGHTS,
-    #    quiet=True,
-    #    overwrite=True,
-    #    env=env,
-    #)
+    grass.mapcalc(
+        expression,
+        out=r_impact,
+        s=r_source,
+        e=r_exposure,
+        w=R_WEIGHTS,
+        quiet=True,
+        overwrite=True,
+        env=env,
+    )
+
+    grass.run_command(
+        "g.remove",
+        flags="f",
+        type="raster",
+        name=r_exposure,
+        quiet=True,
+        stderr=subprocess.PIPE,
+    )
 
     # ==============================================================
     # Summarise impact value and write to string
     # ==============================================================
-    #univar = grass.read_command(
-    #    "r.univar",
-    #    map=r_impact,
-    #    env=env,
-    #)
+    univar = grass.read_command(
+        "r.univar",
+        map=r_impact,
+        env=env,
+    )
 
-    #sum = float(univar.split("\n")[14].split(":")[1])
-    #sql_command = (
-    #    "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-    #        table=V_SRC, result_column=COLUMN, result=sum, cat=cat
-    #    )
-    #)
+    sum = float(univar.split("\n")[14].split(":")[1])
+    sql_command = (
+        "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+            table=V_SRC, result_column=COLUMN, result=sum, cat=cat
+        )
+    )
+
+    grass.verbose(sql_command)
+    # grass.verbose("Processed feature cat {}. Visual impact = {}".format(cat, sum))
 
     # ==============================================================
     # Rename visual impact map if it is to be kept
     # ==============================================================
-    #if EXCLUDE == 1:
-    #    new_name = "visual_impact_{}".format(cat)
-    #    grass.run_command(
-    #        "g.rename",
-    #        raster="{},{}".format(r_impact, new_name),
-    #        overwrite=OVERWRITE,
-    #        quiet=True,
-    #        env=env,
-    #    )
-    sql_command = "{}-{}-OK".format(cat, range)
+    if EXCLUDE == 1:
+        new_name = "visual_impact_{}".format(cat)
+        grass.run_command(
+            "g.rename",
+            raster="{},{}".format(r_impact, new_name),
+            overwrite=OVERWRITE,
+            quiet=True,
+            env=env,
+        )
+        grass.run_command(
+            "g.remove",
+            flags="f",
+            type="raster",
+            name=r_source,
+            quiet=True,
+            stderr=subprocess.PIPE,
+        )
+    else:
+        grass.run_command(
+            "g.remove",
+            flags="f",
+            type="raster",
+            name="{},{}".format(r_source, r_impact),
+            quiet=True,
+            stderr=subprocess.PIPE,
+        )
+
     return sql_command
 
 
 def main():
-
-    # set numpy printing options
-    np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 
     # ==========================================================================
     # Input data
@@ -594,17 +626,17 @@ def main():
 
     # check that the vector map contains only point, line and area features
     info = grass.read_command("v.info", map=V_SRC, flags="t").strip().split("\n")
-    n_areas = int(info[5].split("=")[1])
-    n_boundaries = int(info[3].split("=")[1])
-    n_islands = int(info[6].split("=")[1])
-    n_map3d = int(info[8].split("=")[1])
+    # n_areas = int(info[5].split("=")[1])
+    # n_boundaries = int(info[3].split("=")[1])
+    # n_islands = int(info[6].split("=")[1])
+    # n_map3d = int(info[8].split("=")[1])
 
-    #if n_areas != n_boundaries:
-    #    grass.fatal("r.viewshed.impact cannot process boundaries")
-    #if n_areas != n_islands:
-    #    grass.fatal("r.viewshed.impact cannot process islands")
-    #if n_map3d > 0:
-    #    grass.fatal("r.viewshed.impact cannot process map3d")
+    # if n_areas != n_boundaries:
+    #     grass.fatal("r.viewshed.impact cannot process boundaries")
+    # if n_areas != n_islands:
+    #     grass.fatal("r.viewshed.impact cannot process islands")
+    # if n_map3d > 0:
+    #     grass.fatal("r.viewshed.impact cannot process map3d")
 
     # convert the vector map to pygrass VectorTopo object
     v_src_topo = VectorTopo(V_SRC)
@@ -669,12 +701,12 @@ def main():
         if RANGE <= 0.0 and RANGE != -1:
             grass.fatal("Exposure range must be larger than 0.0.")
 
-        if RANGE == -1 and FUNCTION == "Fuzzy viewshed":
+        if RANGE == -1 and FUNCTION == "Fuzzy_viewshed":
             grass.fatal(
                 "Exposure range cannot be infinity for fuzzy viewshed function."
             )
 
-        if RANGE < B_1 and FUNCTION == "Fuzzy viewshed":
+        if RANGE < B_1 and FUNCTION == "Fuzzy_viewshed":
             grass.fatal("Exposure range must be larger than b1.")
 
     # EXPOSURE RANGE - COLUMN
@@ -715,7 +747,7 @@ def main():
                 )
             )
 
-        if min < B_1 and FUNCTION == "Fuzzy viewshed":
+        if min < B_1 and FUNCTION == "Fuzzy_viewshed":
             grass.fatal("Exposure range must be larger than b1.")
 
     # VIEWSHED FLAGS
@@ -802,7 +834,7 @@ def main():
             if ft.attrs is not None
         }
 
-    grass.verbose("no. trees: {}".format(len(features)))
+    grass.verbose("Number of processed features: {}".format(len(features)))
 
     run_iteration = True
     if run_iteration:
@@ -814,12 +846,11 @@ def main():
     # close vector access
     v_src_topo.close()
 
-    grass.verbose(sql_list)
     # ==============================================================
     # Write computed values to attribute table
     # ==============================================================
     grass.verbose("Writing output to attribute table...")
-    write_result = False
+    write_result = True
     if write_result:
         for sql_command in sql_list:
             grass.run_command(
