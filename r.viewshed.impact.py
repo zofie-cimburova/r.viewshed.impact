@@ -60,12 +60,6 @@ for details.
 #%end
 
 #%flag
-#% key: k
-#% label: Keep intermediate viewshed maps
-#% guisection: Viewshed settings
-#%end
-
-#%flag
 #% key: c
 #% label: Consider the curvature of the earth (current ellipsoid)
 #% guisection: Viewshed settings
@@ -172,6 +166,18 @@ for details.
 #% guisection: Refraction
 #%end
 
+#%flag
+#% key: k
+#% label: Keep intermediate visual impact maps
+#%end
+
+#%option
+#% key: prefix
+#% required: no
+#% label: Prefix for intermediate visual impact maps
+#% answer: visual_impact_
+#%end
+
 #%option
 #% key: memory
 #% type: integer
@@ -240,6 +246,7 @@ BINARY_OUTPUT = None
 REG = None
 OVERWRITE = None
 COLUMN = None
+PREFIX = "visual_impact_"
 
 
 def cleanup():
@@ -553,13 +560,12 @@ def iteration(src):
     )
 
     grass.verbose(sql_command)
-    # grass.verbose("Processed feature cat {}. Visual impact = {}".format(cat, sum))
 
     # ==============================================================
     # Rename visual impact map if it is to be kept
     # ==============================================================
     if EXCLUDE == 1:
-        new_name = "visual_impact_{}".format(cat)
+        new_name = "{}{}".format(PREFIX, cat)
         grass.run_command(
             "g.rename",
             raster="{},{}".format(r_impact, new_name),
@@ -656,10 +662,14 @@ def main():
     global COLUMN
     COLUMN = options["column"]
 
-    # check whether the column already exists in attribute table
+    # check whether the column name contains allowed characters #
+    # and if it already exists in attribute table
+    special_characters = ""  # TODO add check of special characters
     columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
 
-    if COLUMN in columns:
+    if any(c in special_characters for c in COLUMN):
+        grass.fatal("Invalid character in option 'column'.")
+    elif COLUMN in columns:
         grass.warning("Column <%s> already exists and will be overwritten" % COLUMN)
     else:
         grass.run_command(
@@ -789,6 +799,16 @@ def main():
         EXCLUDE = 1
     else:
         EXCLUDE = 0
+
+    # NAME OF TEMPORARY MAPS
+    global PREFIX
+
+    if not options["prefix"]:
+        PREFIX = "visual_impact_"
+    elif any(c in special_characters for c in PREFIX):
+        grass.fatal("Invalid character in option 'prefix'.")
+    else:
+        PREFIX = options["prefix"]
 
     # OVERWRITE OUTPUTS?
     global OVERWRITE
