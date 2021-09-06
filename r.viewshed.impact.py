@@ -328,8 +328,8 @@ def iteration(src):
         cat = src
         range = float(options["range"])
 
-    # if cat not in [518, 115]:
-    #     return None
+    if cat not in [518, 115]:
+        return None
 
     if range is None:
         sum = 0
@@ -509,7 +509,7 @@ def iteration(src):
     # ==============================================================
     r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
 
-    if options["weight"]:
+    if options["weight"] != "":
         if BINARY_OUTPUT:
             expression = (
                 "$out = if(isnull($s),if(isnull($e),null(),if($e!=0,$w,0*$w)),null())"
@@ -661,7 +661,7 @@ def main():
     v_src_topo.open("r")
 
     # check that the weights map exists
-    if options["weight"]:
+    if options["weight"] != "":
         gfile_weights = grass.find_file(name=options["weight"], element="cell")
         if not gfile_weights["file"]:
             grass.fatal("Raster map <%s> not found" % options["weight"])
@@ -670,11 +670,11 @@ def main():
 
     # check whether the column name contains allowed characters
     # check whether the column already exists in attribute table
-    special_characters = ""  # TODO add check of special characters
     columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
 
-    if any(c in special_characters for c in options["column"]):
+    if not grass.legal_name(options["column"]):
         grass.fatal("Invalid character in option 'column'.")
+
     elif options["column"] in columns:
         if flags["a"]:
             grass.warning(
@@ -772,9 +772,9 @@ def main():
     # NAME OF TEMPORARY MAPS
     global PREFIX
 
-    if not options["prefix"]:
+    if options["prefix"] == "":
         PREFIX = "visual_impact_"
-    elif any(c in special_characters for c in PREFIX):
+    elif not grass.legal_name(options["prefix"]):
         grass.fatal("Invalid character in option 'prefix'.")
     else:
         PREFIX = options["prefix"]
@@ -806,7 +806,7 @@ def main():
     # ==========================================================================
     # ensure that we only iterate over sources within computational region
     # use options["range_column"] if provided
-    if options["range_column"] is not None:
+    if options["range_column"] != "":
         features = {
             (ft.cat, ft.attrs[options["range_column"]])
             for ft in v_src_topo.find_by_bbox.geos(bbox=bbox)
