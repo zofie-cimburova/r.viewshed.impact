@@ -171,6 +171,16 @@ for details.
 #% label: Keep intermediate visual impact maps
 #%end
 
+#%flag
+#% key: o
+#% label: Allow intermediate visual impact maps to overwrite existing files
+#%end
+
+#%flag
+#% key: a
+#% label: Allow overwriting column storing visual impact values
+#%end
+
 #%option
 #% key: prefix
 #% required: no
@@ -227,7 +237,6 @@ from grass.script.raster import raster_info
 
 # global variables
 TEMPNAME = grass.tempname(12)
-EXCLUDE = None
 R_DSM = None
 RANGE = None
 RANGE_COL = None
@@ -244,7 +253,6 @@ FLGSTRING = None
 R_WEIGHTS = None
 BINARY_OUTPUT = None
 REG = None
-OVERWRITE = None
 COLUMN = None
 PREFIX = "visual_impact_"
 
@@ -331,9 +339,9 @@ def iteration(src):
     else:
         cat = src
         range = RANGE
-    #
-    # if cat not in [97,263,460]:
-    #     return ""
+
+    # if cat not in [518,115]:
+    #     return None
 
     if range is None:
         sum = 0
@@ -564,15 +572,29 @@ def iteration(src):
     # ==============================================================
     # Rename visual impact map if it is to be kept
     # ==============================================================
-    if EXCLUDE == 1:
+    if flags["k"]:
         new_name = "{}{}".format(PREFIX, cat)
-        grass.run_command(
-            "g.rename",
-            raster="{},{}".format(r_impact, new_name),
-            overwrite=OVERWRITE,
-            quiet=True,
-            env=env,
-        )
+
+        if flags["o"]:
+            grass.run_command(
+                "g.rename",
+                raster="{},{}".format(r_impact, new_name),
+                overwrite=True,
+                quiet=True,
+                env=env,
+            )
+        else:
+            gfile_vi = grass.find_file(name=new_name, element="cell")
+            if gfile_vi["file"]:
+                grass.warning("Raster map <%s> already exists. Skipping." % new_name)
+            else:
+                grass.run_command(
+                    "g.rename",
+                    raster="{},{}".format(r_impact, new_name),
+                    overwrite=False,
+                    quiet=True,
+                    env=env,
+                )
         grass.run_command(
             "g.remove",
             flags="f",
@@ -662,15 +684,18 @@ def main():
     global COLUMN
     COLUMN = options["column"]
 
-    # check whether the column name contains allowed characters #
-    # and if it already exists in attribute table
+    # check whether the column name contains allowed characters
+    # check whether the column already exists in attribute table
     special_characters = ""  # TODO add check of special characters
     columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
 
     if any(c in special_characters for c in COLUMN):
         grass.fatal("Invalid character in option 'column'.")
     elif COLUMN in columns:
-        grass.warning("Column <%s> already exists and will be overwritten" % COLUMN)
+        if flags["a"]:
+            grass.warning("Column <%s> already exists and will be overwritten" % COLUMN)
+        else:
+            grass.fatal("Column <%s> already exists" % COLUMN)
     else:
         grass.run_command(
             "v.db.addcolumn",
@@ -793,13 +818,6 @@ def main():
     CORES_E = int(options["cores_e"])
     cores_i = int(options["cores_i"])
 
-    # FLAG TO KEEP TEMPORARY MAPS
-    global EXCLUDE
-    if flags["k"]:
-        EXCLUDE = 1
-    else:
-        EXCLUDE = 0
-
     # NAME OF TEMPORARY MAPS
     global PREFIX
 
@@ -809,10 +827,6 @@ def main():
         grass.fatal("Invalid character in option 'prefix'.")
     else:
         PREFIX = options["prefix"]
-
-    # OVERWRITE OUTPUTS?
-    global OVERWRITE
-    OVERWRITE = grass.overwrite()
 
     # ==========================================================================
     # Region and mask settings
@@ -871,12 +885,14 @@ def main():
     # ==============================================================
     grass.verbose("Writing output to attribute table...")
     write_result = True
+
     if write_result:
         for sql_command in sql_list:
-            grass.run_command(
-                "db.execute",
-                sql=sql_command,
-            )
+            if sql_command:
+                grass.run_command(
+                    "db.execute",
+                    sql=sql_command,
+                )
 
     # Remove temporary files and reset mask if needed
     cleanup()
