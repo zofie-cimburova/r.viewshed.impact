@@ -328,8 +328,8 @@ def iteration(src):
         cat = src
         range = float(options["range"])
 
-    if cat not in [518, 115]:
-        return None
+    # if cat not in [518, 115]:
+    #     return None
 
     if range is None:
         sum = 0
@@ -551,6 +551,7 @@ def iteration(src):
         "r.univar",
         map=r_impact,
         env=env,
+        quiet=True
     )
 
     sum = float(univar.split("\n")[14].split(":")[1])
