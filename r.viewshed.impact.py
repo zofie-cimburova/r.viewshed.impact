@@ -547,12 +547,7 @@ def iteration(src):
     # ==============================================================
     # Summarise impact value and write to string
     # ==============================================================
-    univar = grass.read_command(
-        "r.univar",
-        map=r_impact,
-        env=env,
-        quiet=True
-    )
+    univar = grass.read_command("r.univar", map=r_impact, env=env, quiet=True)
 
     sum = float(univar.split("\n")[14].split(":")[1])
     sql_command = (
