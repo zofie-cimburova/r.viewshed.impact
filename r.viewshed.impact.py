@@ -328,7 +328,7 @@ def iteration(src):
         cat = src
         range = float(options["range"])
 
-    # if cat not in [518, 115]:
+    # if cat not in [48814, 48815, 49466, 50499, 50612, 50813, 70865, 51428, 51428, 51462, 51477, 51567, 30452]:
     #     return None
 
     if range is None:
@@ -548,8 +548,13 @@ def iteration(src):
     # Summarise impact value and write to string
     # ==============================================================
     univar = grass.read_command("r.univar", map=r_impact, env=env, quiet=True)
+    sum = univar.split("\n")[14].split(":")[1]
 
-    sum = float(univar.split("\n")[14].split(":")[1])
+    if sum == " nan" or sum == " -nan":
+        sum = 0.0
+    else:
+        sum = float(sum)
+
     sql_command = (
         "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
             table=V_SRC, result_column=options["column"], result=sum, cat=cat
@@ -792,7 +797,7 @@ def main():
     bbox = REG.get_bbox()
 
     # check that nsres equals ewres
-    if REG.nsres != REG.ewres:
+    if abs(REG.nsres - REG.ewres) > 1e-6:
         grass.fatal(
             "Variable north-south and east-west 2D grid resolution is not supported"
         )
