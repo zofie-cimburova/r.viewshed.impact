@@ -550,8 +550,10 @@ def iteration(src):
     univar = grass.read_command("r.univar", map=r_impact, env=env, quiet=True)
     sum = univar.split("\n")[14].split(":")[1]
 
-    if sum == " nan" or sum == " -nan":
+    if sum in [" nan", " -nan"]:
         sum = 0.0
+    elif sum in [" inf", " -inf", " Inf", " -Inf"]:
+        return None
     else:
         sum = float(sum)
 
