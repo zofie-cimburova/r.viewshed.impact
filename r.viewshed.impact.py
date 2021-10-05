@@ -226,6 +226,7 @@ import atexit
 import sys
 import subprocess
 import grass.script as grass
+import itertools
 
 from multiprocessing import Pool
 from grass.pygrass.gis.region import Region
@@ -237,12 +238,6 @@ from grass.script.raster import raster_info
 
 # global variables
 TEMPNAME = grass.tempname(12)
-V_SRC = None
-FUNCTION = None
-SEED = None
-BINARY_OUTPUT = None
-REG = None
-PREFIX = "visual_impact_"
 
 
 def cleanup():
@@ -310,7 +305,7 @@ def reset_mask():
             pass
 
 
-def iteration(src):
+def iteration(global_vars, src):
     """Iterate over exposure source polygons, rasterise it, compute
     (paramterised) viewshed, exclude tree pixels, (convert to 0/1),
     (apply weight), summarise the value
@@ -320,23 +315,41 @@ def iteration(src):
     :rtype: String
     """
 
+    # Get variables out of global_vars dictionary
+    exp_range = global_vars["range"]
+    v_src = global_vars["v_src"]
+    reg = global_vars["reg"]
+    dsm = global_vars["dsm"]
+    sample_density = global_vars["sample_density"]
+    column = global_vars["column"]
+    observer_elevation = global_vars["observer_elevation"]
+    b_1 = global_vars["b_1"]
+    refr_coeff = global_vars["refr_coeff"]
+    memory = global_vars["memory"]
+    cores = global_vars["cores"]
+    weight = global_vars["weight"]
+    function = global_vars["function"]
+    seed = global_vars["seed"]
+    binary_output = global_vars["binary_output"]
+    prefix = global_vars["prefix"]
+    flagstring = global_vars["flagstring"]
+    keep_tmp = global_vars["keep_tmp"]
+    overwrite_tmp = global_vars["overwrite_tmp"]
+
     # Category, range
-    if options["range"] == "":
+    if exp_range == "":
         cat = src[0]
         range = src[1]
     else:
         cat = src
-        range = float(options["range"])
-
-    # if cat not in [48814, 48815, 49466, 50499, 50612, 50813, 70865, 51428, 51428, 51462, 51477, 51567, 30452]:
-    #     return None
+        range = float(exp_range)
 
     if range is None:
         sum = 0
 
         sql_command = (
             "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=V_SRC, result_column=options["column"], result=sum, cat=cat
+                table=v_src, result_column=column, result=sum, cat=cat
             )
         )
         return sql_command
@@ -345,7 +358,7 @@ def iteration(src):
     bbox_string = (
         grass.read_command(
             "v.db.select",
-            map=V_SRC,
+            map=v_src,
             where="cat={}".format(cat),
             flags="r",
         )
@@ -367,11 +380,11 @@ def iteration(src):
     # ensure that local region doesn't exceed global region
     env = os.environ.copy()
     env["GRASS_REGION"] = grass.region_env(
-        n=str(min(bbox[0], REG.north)),
-        s=str(max(bbox[1], REG.south)),
-        e=str(min(bbox[2], REG.east)),
-        w=str(max(bbox[3], REG.west)),
-        align=options["dsm"],
+        n=str(min(bbox[0], reg.north)),
+        s=str(max(bbox[1], reg.south)),
+        e=str(min(bbox[2], reg.east)),
+        w=str(max(bbox[3], reg.west)),
+        align=dsm,
     )
 
     # ==============================================================
@@ -380,7 +393,7 @@ def iteration(src):
     r_source = "{}_{}_rast".format(TEMPNAME, cat)
     grass.run_command(
         "v.to.rast",
-        input=V_SRC,
+        input=v_src,
         type="point,line,area,centroid",
         cats=str(cat),
         output=r_source,
@@ -397,7 +410,7 @@ def iteration(src):
 
         sql_command = (
             "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=V_SRC, result_column=options["column"], result=sum, cat=cat
+                table=v_src, result_column=column, result=sum, cat=cat
             )
         )
         return sql_command
@@ -410,10 +423,10 @@ def iteration(src):
         "r.random",
         input=r_source,
         raster=r_sample,
-        npoints="{}%".format(options["sample_density"]),
+        npoints="{}%".format(sample_density),
         flags="b",
         overwrite=True,
-        seed=SEED,
+        seed=seed,
         quiet=True,
         env=env,
     )
@@ -424,7 +437,7 @@ def iteration(src):
 
         sql_command = (
             "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=V_SRC, result_column=options["column"], result=sum, cat=cat
+                table=v_src, result_column=column, result=sum, cat=cat
             )
         )
         return sql_command
@@ -459,36 +472,30 @@ def iteration(src):
     # around processed source
     # ==============================================================
     env["GRASS_REGION"] = grass.region_env(
-        n=str(min(bbox[0] + range, REG.north)),
-        s=str(max(bbox[1] - range, REG.south)),
-        e=str(min(bbox[2] + range, REG.east)),
-        w=str(max(bbox[3] - range, REG.west)),
-        align=options["dsm"],
+        n=str(min(bbox[0] + range, reg.north)),
+        s=str(max(bbox[1] - range, reg.south)),
+        e=str(min(bbox[2] + range, reg.east)),
+        w=str(max(bbox[3] - range, reg.west)),
+        align=dsm,
     )
 
     # ==============================================================
     # Calculate cummulative (parametrised) viewshed from source
     # ==============================================================
-    flagstring = ""
-    if flags["r"]:
-        flagstring += "r"
-    if flags["c"]:
-        flagstring += "c"
-
     r_exposure = "{}_{}_exposure".format(TEMPNAME, cat)
     grass.run_command(
         "r.viewshed.exposure",
-        dsm=options["dsm"],
+        dsm=dsm,
         output=r_exposure,
         sampling_points=v_sample,
-        observer_elevation=float(options["observer_elevation"]),
+        observer_elevation=float(observer_elevation),
         range=range,
-        function=FUNCTION,
-        b1_distance=float(options["b1"]),
-        refraction_coeff=float(options["refraction_coefficient"]),
-        seed=SEED,
-        memory=int(options["memory"]),
-        cores=int(options["cores_e"]),
+        function=function,
+        b1_distance=float(b_1),
+        refraction_coeff=float(refr_coeff),
+        seed=seed,
+        memory=int(memory),
+        cores=int(cores),
         flags=flagstring,
         overwrite=True,
         quiet=True,
@@ -509,15 +516,15 @@ def iteration(src):
     # ==============================================================
     r_impact = "{}_{}_visual_impact".format(TEMPNAME, cat)
 
-    if options["weight"] != "":
-        if BINARY_OUTPUT:
+    if weight != "":
+        if binary_output:
             expression = (
                 "$out = if(isnull($s),if(isnull($e),null(),if($e!=0,$w,0*$w)),null())"
             )
         else:
             expression = "$out = if(isnull($s),$e * $w,null())"
     else:
-        if BINARY_OUTPUT:
+        if binary_output:
             expression = (
                 "$out = if(isnull($s),if(isnull($e),null(),if($e!=0,1,0)),null())"
             )
@@ -529,7 +536,7 @@ def iteration(src):
         out=r_impact,
         s=r_source,
         e=r_exposure,
-        w=options["weight"],
+        w=weight,
         quiet=True,
         overwrite=True,
         env=env,
@@ -559,7 +566,7 @@ def iteration(src):
 
     sql_command = (
         "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-            table=V_SRC, result_column=options["column"], result=sum, cat=cat
+            table=v_src, result_column=column, result=sum, cat=cat
         )
     )
 
@@ -568,10 +575,10 @@ def iteration(src):
     # ==============================================================
     # Rename visual impact map if it is to be kept
     # ==============================================================
-    if flags["k"]:
-        new_name = "{}{}".format(PREFIX, cat)
+    if keep_tmp:
+        new_name = "{}{}".format(prefix, cat)
 
-        if flags["o"]:
+        if overwrite_tmp:
             grass.run_command(
                 "g.rename",
                 raster="{},{}".format(r_impact, new_name),
@@ -618,14 +625,14 @@ def main():
     # Input data
     # ==========================================================================
     # DSM
+    dsm = options["dsm"]
     # check that the DSM exists
-    gfile_dsm = grass.find_file(name=options["dsm"], element="cell")
+    gfile_dsm = grass.find_file(name=dsm, element="cell")
     if not gfile_dsm["file"]:
-        grass.fatal("Raster map <%s> not found" % options["dsm"])
+        grass.fatal("Raster map <%s> not found" % dsm)
 
     # EXPOSURE SOURCE VECTOR MAP
-    global V_SRC
-    V_SRC = options["exposure"].split("@")[0]
+    v_src = options["exposure"].split("@")[0]
     mapset = options["exposure"].split("@")[1]
 
     # check that the vector map is in current mapset
@@ -633,20 +640,20 @@ def main():
     if mapset != current_mapset:
         grass.fatal(
             "Vector map <{}> must be stored in current mapset <{}>".format(
-                V_SRC, current_mapset
+                v_src, current_mapset
             )
         )
 
     # check that the vector map exists
-    gfile_source = grass.find_file(name=V_SRC, element="vector")
+    gfile_source = grass.find_file(name=v_src, element="vector")
     if not gfile_source["file"]:
-        grass.fatal("Vector map <{}@{}> not found".format(V_SRC, mapset))
+        grass.fatal("Vector map <{}@{}> not found".format(v_src, mapset))
 
     # build topology of the vector map in case it got corrupted
-    grass.run_command("v.build", map=V_SRC, quiet=True)
+    grass.run_command("v.build", map=v_src, quiet=True)
 
     # check that the vector map contains only point, line and area features
-    info = grass.read_command("v.info", map=V_SRC, flags="t").strip().split("\n")
+    info = grass.read_command("v.info", map=v_src, flags="t").strip().split("\n")
     # n_areas = int(info[5].split("=")[1])
     # n_boundaries = int(info[3].split("=")[1])
     # n_islands = int(info[6].split("=")[1])
@@ -660,74 +667,72 @@ def main():
     #     grass.fatal("r.viewshed.impact cannot process map3d")
 
     # convert the vector map to pygrass VectorTopo object
-    v_src_topo = VectorTopo(V_SRC)
+    v_src_topo = VectorTopo(v_src)
     v_src_topo.open("r")
 
     # check that the weights map exists
-    if options["weight"] != "":
-        gfile_weights = grass.find_file(name=options["weight"], element="cell")
+    weight = options["weight"]
+    if weight != "":
+        gfile_weights = grass.find_file(name=weight, element="cell")
         if not gfile_weights["file"]:
-            grass.fatal("Raster map <%s> not found" % options["weight"])
+            grass.fatal("Raster map <%s> not found" % weight)
 
     # COLUMN TO STORE OUTPUT VISUAL IMPACT VALUE
 
     # check whether the column name contains allowed characters
     # check whether the column already exists in attribute table
-    columns = grass.read_command("db.columns", table=V_SRC).strip().split("\n")
+    columns = grass.read_command("db.columns", table=v_src).strip().split("\n")
 
-    if not grass.legal_name(options["column"]):
+    column = options["column"]
+    if not grass.legal_name(column):
         grass.fatal("Invalid character in option 'column'.")
 
-    elif options["column"] in columns:
+    elif column in columns:
         if flags["a"]:
-            grass.warning(
-                "Column <%s> already exists and will be overwritten" % options["column"]
-            )
+            grass.warning("Column <%s> already exists and will be overwritten" % column)
         else:
-            grass.fatal("Column <%s> already exists" % options["column"])
+            grass.fatal("Column <%s> already exists" % column)
     else:
         grass.run_command(
             "v.db.addcolumn",
-            map=V_SRC,
-            columns="{} double precision".format(options["column"]),
+            map=v_src,
+            columns="{} double precision".format(column),
             quiet=True,
         )
 
     # OBSERVER ELEVATION
-    if float(options["observer_elevation"]) < 0.0:
+    observer_elevation = options["observer_elevation"]
+    if float(observer_elevation) < 0.0:
         grass.fatal("Observer elevation must be larger than or equal to 0.0.")
 
     # VIEWSHED PARAMETRISATION FUNCTION
-    global FUNCTION
-    FUNCTION = options["function"]
+    function = options["function"]
 
     # BINARY OUTPUT
-    global BINARY_OUTPUT
-    BINARY_OUTPUT = False
+    binary_output = False
 
-    if FUNCTION == "None":
-        FUNCTION = "Binary"
-        BINARY_OUTPUT = True
+    if function == "None":
+        function = "Binary"
+        binary_output = True
 
     # EXPOSURE RANGE - VALUE
-    if options["range"] != "":
-        if float(options["range"]) <= 0.0 and float(options["range"]) != -1:
+    exp_range = options["range"]
+    b_1 = options["b1"]
+    if exp_range != "":
+        if float(exp_range) <= 0.0 and float(exp_range) != -1:
             grass.fatal("Exposure range must be larger than 0.0.")
 
-        if float(options["range"]) == -1 and FUNCTION == "Fuzzy_viewshed":
+        if float(exp_range) == -1 and function == "Fuzzy_viewshed":
             grass.fatal(
                 "Exposure range cannot be infinity for fuzzy viewshed function."
             )
 
-        if (
-            float(options["range"]) < float(options["b1"])
-            and FUNCTION == "Fuzzy_viewshed"
-        ):
+        if float(exp_range) < float(b_1) and function == "Fuzzy_viewshed":
             grass.fatal("Exposure range must be larger than b1.")
 
     # EXPOSURE RANGE - COLUMN
     if options["range_column"] != "":
-        info = grass.read_command("v.info", flags="c", map=V_SRC, quiet=True).strip()
+        info = grass.read_command("v.info", flags="c", map=v_src, quiet=True).strip()
         info_dict = dict(reversed(i.split("|")) for i in info.split("\n"))
 
         # check if column exists
@@ -743,7 +748,7 @@ def main():
             grass.read_command(
                 "v.db.univar",
                 flags="g",
-                map=V_SRC,
+                map=v_src,
                 column=options["range_column"],
                 quiet=True,
             )
@@ -759,28 +764,34 @@ def main():
                 )
             )
 
-        if min < float(options["b1"]) and FUNCTION == "Fuzzy_viewshed":
+        if min < float(b_1) and function == "Fuzzy_viewshed":
             grass.fatal("Exposure range must be larger than b1.")
 
     # SEED
-    global SEED
-    SEED = options["seed"]
+    seed = options["seed"]
 
-    if not SEED:
-        SEED = os.getpid()
+    if not seed:
+        seed = os.getpid()
 
     # CORES
     cores_i = int(options["cores_i"])
 
     # NAME OF TEMPORARY MAPS
-    global PREFIX
+    prefix = "visual_impact_"
 
     if options["prefix"] == "":
-        PREFIX = "visual_impact_"
+        prefix = "visual_impact_"
     elif not grass.legal_name(options["prefix"]):
         grass.fatal("Invalid character in option 'prefix'.")
     else:
-        PREFIX = options["prefix"]
+        prefix = options["prefix"]
+
+    # FLAGSTRING
+    flagstring = ""
+    if flags["r"]:
+        flagstring += "r"
+    if flags["c"]:
+        flagstring += "c"
 
     # ==========================================================================
     # Region and mask settings
@@ -794,12 +805,11 @@ def main():
         unset_mask()
 
     # get comp. region parameters
-    global REG
-    REG = Region()
-    bbox = REG.get_bbox()
+    reg = Region()
+    bbox = reg.get_bbox()
 
     # check that nsres equals ewres
-    if abs(REG.nsres - REG.ewres) > 1e-6:
+    if abs(reg.nsres - reg.ewres) > 1e-6:
         grass.fatal(
             "Variable north-south and east-west 2D grid resolution is not supported"
         )
@@ -807,6 +817,30 @@ def main():
     # ==========================================================================
     # Iteration over features and computation of their visual impact
     # ==========================================================================
+
+    # Collect variables that will be used in do_it_all() into a dictionary
+    global_vars = {
+        "range": exp_range,
+        "v_src": v_src,
+        "reg": reg,
+        "dsm": dsm,
+        "sample_density": options["sample_density"],
+        "column": column,
+        "observer_elevation": observer_elevation,
+        "b_1": b_1,
+        "refr_coeff": options["refraction_coefficient"],
+        "memory": options["memory"],
+        "cores": options["cores_e"],
+        "weight": weight,
+        "function": function,
+        "seed": seed,
+        "binary_output": binary_output,
+        "prefix": prefix,
+        "flagstring": flagstring,
+        "keep_tmp": flags["k"],
+        "overwrite_tmp": flags["o"],
+    }
+
     # ensure that we only iterate over sources within computational region
     # use options["range_column"] if provided
     if options["range_column"] != "":
@@ -824,10 +858,12 @@ def main():
 
     grass.verbose("Number of processed features: {}".format(len(features)))
 
+    combo = list(zip(itertools.repeat(global_vars), features))
+
     run_iteration = True
     if run_iteration:
         pool = Pool(cores_i)
-        sql_list = pool.map(iteration, features)
+        sql_list = pool.starmap(iteration, combo)
         pool.close()
         pool.join()
 
