@@ -355,22 +355,18 @@ def iteration(global_vars, src):
         return sql_command
 
     # Bounding box
-    bbox_string = (
-        grass.read_command(
-            "v.db.select",
-            map=v_src,
-            where="cat={}".format(cat),
-            flags="r",
-        )
-        .strip()
-        .split("\n")
+    bbox_string = grass.parse_command(
+        "v.db.select",
+        map=v_src,
+        where="cat={}".format(cat),
+        flags="r",
     )
 
     bbox = [
-        float((bbox_string[0][2:])),
-        float((bbox_string[1][2:])),
-        float((bbox_string[3][2:])),
-        float((bbox_string[2][2:])),
+        float((bbox_string["n"])),
+        float((bbox_string["s"])),
+        float((bbox_string["e"])),
+        float((bbox_string["w"])),
     ]
 
     # ==============================================================
@@ -554,8 +550,13 @@ def iteration(global_vars, src):
     # ==============================================================
     # Summarise impact value and write to string
     # ==============================================================
-    univar = grass.read_command("r.univar", map=r_impact, env=env, quiet=True)
-    sum = univar.split("\n")[14].split(":")[1]
+    sum = grass.parse_command(
+        "r.univar",
+        map=r_impact,
+        flags="g",
+        env=env,
+        quiet=True,
+    )["sum"]
 
     if sum in [" nan", " -nan"]:
         sum = 0.0
@@ -653,7 +654,7 @@ def main():
     grass.run_command("v.build", map=v_src, quiet=True)
 
     # check that the vector map contains only point, line and area features
-    info = grass.read_command("v.info", map=v_src, flags="t").strip().split("\n")
+    # info = grass.read_command("v.info", map=v_src, flags="t").strip().split("\n")
     # n_areas = int(info[5].split("=")[1])
     # n_boundaries = int(info[3].split("=")[1])
     # n_islands = int(info[6].split("=")[1])
@@ -682,8 +683,8 @@ def main():
     # check whether the column name contains allowed characters
     # check whether the column already exists in attribute table
     columns = grass.read_command("db.columns", table=v_src).strip().split("\n")
-
     column = options["column"]
+
     if not grass.legal_name(column):
         grass.fatal("Invalid character in option 'column'.")
 
@@ -745,16 +746,13 @@ def main():
 
         # check that column values are nonnegative
         min = float(
-            grass.read_command(
+            grass.parse_command(
                 "v.db.univar",
                 flags="g",
                 map=v_src,
                 column=options["range_column"],
                 quiet=True,
-            )
-            .strip()
-            .split("\n")[1]
-            .split("=")[1]
+            )["min"]
         )
 
         if min < 0:
