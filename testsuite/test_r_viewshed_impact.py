@@ -1,132 +1,320 @@
 #!/usr/bin/env python3
 
 """
-MODULE:    Test of r.example.plus
-
-AUTHOR(S): Vaclav Petras <wenzeslaus gmail com>
-
-PURPOSE:   Test of r.example.plus (example of a simple test of a module)
-
-COPYRIGHT: (C) 2020 by Vaclav Petras and the GRASS Development Team
-
+MODULE:    Test of r.viewshed.impact
+AUTHOR(S): Zofie Cimburova <stefan dot blumentrath at nina dot no>
+           Stefan Blumentrath
+PURPOSE:   Test of r.viewshed.exposure
+COPYRIGHT: (C) 2020 by Zofie Cimburova, Stefan Blumentrath and the GRASS GIS
+Development Team
 This program is free software under the GNU General Public
 License (>=v2). Read the file COPYING that comes with GRASS
 for details.
 """
 
+# python3 /home/NINA.NO/zofie.cimburova/git/r.viewshed.impact/testsuite/test_r_viewshed_impact.py
+
+from grass.gunittest.gmodules import SimpleModule
 import grass.script as gs
 
 from grass.gunittest.case import TestCase
 from grass.gunittest.main import test
 
 
-def get_raster_min_max(raster_map):
-    info = gs.raster_info(raster_map)
-    return info["min"], info["max"]
+class TestFunctions(TestCase):
+    """The main (and only) test case for the r.viewshed.impact module"""
 
+    tempname = gs.tempname(12)
 
-class TestWatershed(TestCase):
-    """The main (and only) test case for the r.example.plus module"""
+    # maps used as inputs
+    source_points = "schools_wake@PERMANENT"
+    source_lines = "roadsmajor@PERMANENT"
+    source_areas = "lakes@PERMANENT"
+    weight = "aspect@PERMANENT"
+    dsm = "elev_ned_30m@PERMANENT"
 
-    # Raster maps be used as inputs (they exist in the NC SPM sample location)
-    test_input_1 = "elevation"
-    test_input_2 = "zipcodes"
-    # Raster map name be used as output
-    output = "plus_result"
+    # copy exposure maps locally
+    source_points_local = "schools_wake_local"
+    source_lines_local = "roadsmajor_local"
+    source_areas_local = "lakes_local"
+
+    gs.run_command(
+        "g.copy",
+        vector="{},{}".format(source_points,source_points_local)
+    )
+    gs.run_command(
+        "g.copy",
+        vector="{},{}".format(source_lines,source_lines_local)
+    )
+    gs.run_command(
+        "g.copy",
+        vector="{},{}".format(source_areas,source_areas_local)
+    )
+
+    r_viewshed = SimpleModule(
+        "r.viewshed.impact",
+        #exposure=,
+        #column="column_test",
+        dsm=dsm,
+        #weight=,
+        flags="cra",
+        observer_elevation=1.5,
+        #range_column=,
+        #range=,
+        #function=,
+        b1=90,
+        #sample_density=100,
+        seed=50,
+        #flags="ko",
+        memory=5000,
+        cores_i=10,
+        cores_e=2,
+        quiet=True,
+    )
+
+    test_results_stats = {
+        "test_point_b": {
+            "n": 36,
+            "min": 5859.57,
+            "max": 44099,
+            "sum": 849322,
+            "mean": 23592.3,
+        },
+        "test_point_d": {
+            "n": 36,
+            "min": 0.0,
+            "max": 16.7352,
+            "sum": 381.836,
+            "mean": 10.6066,
+        },
+        "test_line_f": {
+            "n": 97,
+            "min": 0.0,
+            "max": 620.992,
+            "sum": 8024.69,
+            "mean": 82.7288,
+        },
+        "test_area_s": {
+            "n": 793,
+            "min": 0.0,
+            "max": 0.753504,
+            "sum": 2.54542,
+            "mean": 0.00320987,
+        },
+        "test_area_v": {
+            "n": 793,
+            "min": 0.0,
+            "max": 1.16588,
+            "sum": 4.25116,
+            "mean": 0.00536086,
+        },
+    }
 
     @classmethod
     def setUpClass(cls):
-        """Ensures expected computational region (and anything else needed)
-
-        These are things needed by all test function but not modified by
-        any of them.
+        """Save the current region
+        We cannot use temp_region as it is used by the module.
         """
-        # We will use specific computational region for our process in case
-        # something else is running in parallel with our tests.
-        cls.use_temp_region()
-        # Use of of the inputs to set computational region
-        cls.runModule("g.region", raster=cls.test_input_1)
+
+        # Save current region to temporary file
+        cls.runModule("g.region", flags="u", save="{}_region".format(cls.tempname))
 
     @classmethod
     def tearDownClass(cls):
-        """Remove the temporary region (and anything else we created)"""
-        cls.del_temp_region()
+        """Reset original region and remove the temporary region"""
+        cls.runModule("g.region", region="{}_region".format(cls.tempname))
+        cls.runModule(
+            "g.remove", flags="f", type="region", name="{}_region".format(cls.tempname)
+        )
 
     def tearDown(self):
         """Remove the output created from the module
-
         This is executed after each test function run. If we had
         something to set up before each test function run, we would use setUp()
         function.
-
         Since we remove the raster map after running each test function,
         we can reuse the same name for all the test functions.
         """
-        self.runModule("g.remove", flags="f", type="raster", name=[self.output])
+        self.runModule("g.remove", flags="f", type="raster", pattern="test_2*")
 
-    def test_output_created(self):
-        """Check that the output is created"""
-        # run the watershed module
-        self.assertModule(
-            "r.example.plus",
-            a_input=self.test_input_1,
-            b_input=self.test_input_2,
-            output=self.output,
-        )
-        # check to see if output is in mapset
-        self.assertRasterExists(self.output, msg="Output was not created")
+    def test_points_b(self):
+        """Test visibility of points, Binary, 300m"""
 
-    def test_missing_parameter(self):
-        """Check that the module fails when parameters are missing
+        # Use the input DSM to set computational region
+        gs.run_command("g.region", raster=self.dsm, align=self.dsm)
 
-        Checks absence of each of the three parameters. Each parameter absence
-        is tested separatelly.
+        # Input parameters
+        self.r_viewshed.inputs.exposure = self.source_points_local
+        self.r_viewshed.inputs.weight = self.weight
+        self.r_viewshed.inputs.function = "Binary"
+        self.r_viewshed.inputs.range = 300
+        self.r_viewshed.inputs.sample_density = 100
+        self.r_viewshed.inputs.column="column_test_b"
 
-        Note that this does not cover all the possible combinations, but it
-        tries to simulate most of possible user errors and it should cover
-        most of the implementation.
-        """
-        self.assertModuleFail(
-            "r.example.plus",
-            b_input=self.test_input_2,
-            output=self.output,
-            msg="The a_input parameter should be required",
-        )
-        self.assertModuleFail(
-            "r.example.plus",
-            a_input=self.test_input_1,
-            output=self.output,
-            msg="The b_input parameter should be required",
-        )
-        self.assertModuleFail(
-            "r.example.plus",
-            a_input=self.test_input_1,
-            b_input=self.test_input_2,
-            msg="The output parameter should be required",
+        # Print the command
+        print(self.r_viewshed.get_bash())
+
+        # Check that the module runs
+        self.assertModule(self.r_viewshed)
+
+        # Check if univariate vector statistics match the expected result
+        self.assertVectorFitsUnivar(
+            map=self.r_viewshed.inputs.exposure,
+            column=self.r_viewshed.inputs.column,
+            reference=self.test_results_stats["test_point_b"],
+            precision=1e-4,
         )
 
-    def test_output_range(self):
-        """Check to see if output is within the expected range"""
-        self.assertModule(
-            "r.example.plus",
-            a_input=self.test_input_1,
-            b_input=self.test_input_2,
-            output=self.output,
+        # delete column
+        gs.run_command(
+            "v.db.dropcolumn",
+            map=self.source_points_local,
+            columns=self.r_viewshed.inputs.column,
         )
 
-        min_1, max_1 = get_raster_min_max(self.test_input_1)
-        min_2, max_2 = get_raster_min_max(self.test_input_2)
+    def test_points_d(self):
+        """Test visibility of points, Distance decay, variable range"""
 
-        reference_min = min_1 + min_2
-        reference_max = max_1 + max_2
+        # Use the input DSM to set computational region
+        gs.run_command("g.region", raster=self.dsm, align=self.dsm)
 
-        self.assertRasterMinMax(
-            self.output,
-            reference_min,
-            reference_max,
-            msg="Output exceeds the values computed from inputs",
+        # Input parameters
+        self.r_viewshed.inputs.exposure = self.source_points_local
+        self.r_viewshed.inputs.function = "Distance_decay"
+        self.r_viewshed.inputs.range_column = "PROJ_CAP"
+        self.r_viewshed.inputs.sample_density = 100
+        self.r_viewshed.inputs.range = None
+        self.r_viewshed.inputs.column = "column_test_d"
+        self.r_viewshed.inputs.weight = None
+
+        # Print the command
+        print(self.r_viewshed.get_bash())
+
+        # Check that the module runs
+        self.assertModule(self.r_viewshed)
+
+        # Check if univariate vector statistics match the expected result
+        self.assertVectorFitsUnivar(
+            map=self.r_viewshed.inputs.exposure,
+            column=self.r_viewshed.inputs.column,
+            reference=self.test_results_stats["test_point_d"],
+            precision=1e-4,
         )
 
+        # delete column
+        gs.run_command(
+            "v.db.dropcolumn",
+            map=self.source_points_local,
+            columns=self.r_viewshed.inputs.column,
+        )
+
+    def test_lines_f(self):
+        """Test visibility of lines, Fuzzy viewshed, 150m"""
+
+        # Use the input DSM to set computational region
+        gs.run_command("g.region", raster=self.dsm, align=self.dsm)
+
+        # Input parameters
+        self.r_viewshed.inputs.exposure = self.source_lines_local
+        self.r_viewshed.inputs.function = "Fuzzy_viewshed"
+        self.r_viewshed.inputs.range_column = None
+        self.r_viewshed.inputs.range = 150
+        self.r_viewshed.inputs.sample_density = 10
+        self.r_viewshed.inputs.column = "column_test_f"
+        self.r_viewshed.inputs.weight = None
+
+        # Print the command
+        print(self.r_viewshed.get_bash())
+
+        # Check that the module runs
+        self.assertModule(self.r_viewshed)
+
+        # Check if univariate vector statistics match the expected result
+        self.assertVectorFitsUnivar(
+            map=self.r_viewshed.inputs.exposure,
+            column=self.r_viewshed.inputs.column,
+            reference=self.test_results_stats["test_line_f"],
+            precision=1e-4,
+        )
+
+        # delete column
+        gs.run_command(
+            "v.db.dropcolumn",
+            map=self.source_lines_local,
+            columns=self.r_viewshed.inputs.column,
+        )
+
+    def test_areas_s(self):
+        """Test visibility of areas, Solid angle, 150m"""
+
+        # Use the input DSM to set computational region
+        gs.run_command("g.region", raster=self.dsm, align=self.dsm)
+
+        # Input parameters
+        self.r_viewshed.inputs.exposure = self.source_areas_local
+        self.r_viewshed.inputs.function = "Solid_angle"
+        self.r_viewshed.inputs.range_column = None
+        self.r_viewshed.inputs.range = 150
+        self.r_viewshed.inputs.sample_density = 1
+        self.r_viewshed.inputs.column = "column_test_s"
+        self.r_viewshed.inputs.weight = None
+
+        # Print the command
+        print(self.r_viewshed.get_bash())
+
+        # Check that the module runs
+        self.assertModule(self.r_viewshed)
+
+        # Check if univariate vector statistics match the expected result
+        self.assertVectorFitsUnivar(
+            map=self.r_viewshed.inputs.exposure,
+            column=self.r_viewshed.inputs.column,
+            reference=self.test_results_stats["test_area_s"],
+            precision=1e-4,
+        )
+
+        # delete column
+        gs.run_command(
+            "v.db.dropcolumn",
+            map=self.source_areas_local,
+            columns=self.r_viewshed.inputs.column,
+        )
+
+    def test_areas_v(self):
+        """Test visibility of areas, Visual magnitude, 150m"""
+
+        # Use the input DSM to set computational region
+        gs.run_command("g.region", raster=self.dsm, align=self.dsm)
+
+        # Input parameters
+        self.r_viewshed.inputs.exposure = self.source_areas_local
+        self.r_viewshed.inputs.function = "Visual_magnitude"
+        self.r_viewshed.inputs.range_column = None
+        self.r_viewshed.inputs.range = 150
+        self.r_viewshed.inputs.sample_density = 1
+        self.r_viewshed.inputs.column = "column_test_v"
+        self.r_viewshed.inputs.weight = None
+
+        # Print the command
+        print(self.r_viewshed.get_bash())
+
+        # Check that the module runs
+        self.assertModule(self.r_viewshed)
+
+        # Check if univariate vector statistics match the expected result
+        self.assertVectorFitsUnivar(
+            map=self.r_viewshed.inputs.exposure,
+            column=self.r_viewshed.inputs.column,
+            reference=self.test_results_stats["test_area_v"],
+            precision=1e-4,
+        )
+
+        # delete column
+        gs.run_command(
+            "v.db.dropcolumn",
+            map=self.source_areas_local,
+            columns=self.r_viewshed.inputs.column,
+        )
 
 if __name__ == "__main__":
     test()
