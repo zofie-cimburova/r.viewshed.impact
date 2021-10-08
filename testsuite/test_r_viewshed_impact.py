@@ -38,34 +38,25 @@ class TestFunctions(TestCase):
     source_lines_local = "roadsmajor_local"
     source_areas_local = "lakes_local"
 
-    gs.run_command(
-        "g.copy",
-        vector="{},{}".format(source_points,source_points_local)
-    )
-    gs.run_command(
-        "g.copy",
-        vector="{},{}".format(source_lines,source_lines_local)
-    )
-    gs.run_command(
-        "g.copy",
-        vector="{},{}".format(source_areas,source_areas_local)
-    )
+    gs.run_command("g.copy", vector="{},{}".format(source_points, source_points_local))
+    gs.run_command("g.copy", vector="{},{}".format(source_lines, source_lines_local))
+    gs.run_command("g.copy", vector="{},{}".format(source_areas, source_areas_local))
 
     r_viewshed = SimpleModule(
         "r.viewshed.impact",
-        #exposure=,
-        #column="column_test",
+        # exposure=,
+        # column="column_test",
         dsm=dsm,
-        #weight=,
+        # weight=,
         flags="cra",
         observer_elevation=1.5,
-        #range_column=,
-        #range=,
-        #function=,
+        # range_column=,
+        # range=,
+        # function=,
         b1=90,
-        #sample_density=100,
+        # sample_density=100,
         seed=50,
-        #flags="ko",
+        # flags="ko",
         memory=5000,
         cores_i=10,
         cores_e=2,
@@ -112,30 +103,25 @@ class TestFunctions(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Save the current region
+        """Save the current region to temporary file
         We cannot use temp_region as it is used by the module.
         """
-
-        # Save current region to temporary file
         cls.runModule("g.region", flags="u", save="{}_region".format(cls.tempname))
 
     @classmethod
     def tearDownClass(cls):
         """Reset original region and remove the temporary region"""
+
         cls.runModule("g.region", region="{}_region".format(cls.tempname))
         cls.runModule(
             "g.remove", flags="f", type="region", name="{}_region".format(cls.tempname)
         )
 
-    def tearDown(self):
-        """Remove the output created from the module
-        This is executed after each test function run. If we had
-        something to set up before each test function run, we would use setUp()
-        function.
-        Since we remove the raster map after running each test function,
-        we can reuse the same name for all the test functions.
-        """
-        self.runModule("g.remove", flags="f", type="raster", pattern="test_2*")
+        cls.runModule(
+            "g.remove", flags="f", type="vector", name=cls.source_points_local
+        )
+        cls.runModule("g.remove", flags="f", type="vector", name=cls.source_lines_local)
+        cls.runModule("g.remove", flags="f", type="vector", name=cls.source_areas_local)
 
     def test_points_b(self):
         """Test visibility of points, Binary, 300m"""
@@ -149,7 +135,7 @@ class TestFunctions(TestCase):
         self.r_viewshed.inputs.function = "Binary"
         self.r_viewshed.inputs.range = 300
         self.r_viewshed.inputs.sample_density = 100
-        self.r_viewshed.inputs.column="column_test_b"
+        self.r_viewshed.inputs.column = "column_test_b"
 
         # Print the command
         print(self.r_viewshed.get_bash())
@@ -163,13 +149,6 @@ class TestFunctions(TestCase):
             column=self.r_viewshed.inputs.column,
             reference=self.test_results_stats["test_point_b"],
             precision=1e-4,
-        )
-
-        # delete column
-        gs.run_command(
-            "v.db.dropcolumn",
-            map=self.source_points_local,
-            columns=self.r_viewshed.inputs.column,
         )
 
     def test_points_d(self):
@@ -201,13 +180,6 @@ class TestFunctions(TestCase):
             precision=1e-4,
         )
 
-        # delete column
-        gs.run_command(
-            "v.db.dropcolumn",
-            map=self.source_points_local,
-            columns=self.r_viewshed.inputs.column,
-        )
-
     def test_lines_f(self):
         """Test visibility of lines, Fuzzy viewshed, 150m"""
 
@@ -235,13 +207,6 @@ class TestFunctions(TestCase):
             column=self.r_viewshed.inputs.column,
             reference=self.test_results_stats["test_line_f"],
             precision=1e-4,
-        )
-
-        # delete column
-        gs.run_command(
-            "v.db.dropcolumn",
-            map=self.source_lines_local,
-            columns=self.r_viewshed.inputs.column,
         )
 
     def test_areas_s(self):
@@ -273,13 +238,6 @@ class TestFunctions(TestCase):
             precision=1e-4,
         )
 
-        # delete column
-        gs.run_command(
-            "v.db.dropcolumn",
-            map=self.source_areas_local,
-            columns=self.r_viewshed.inputs.column,
-        )
-
     def test_areas_v(self):
         """Test visibility of areas, Visual magnitude, 150m"""
 
@@ -309,12 +267,6 @@ class TestFunctions(TestCase):
             precision=1e-4,
         )
 
-        # delete column
-        gs.run_command(
-            "v.db.dropcolumn",
-            map=self.source_areas_local,
-            columns=self.r_viewshed.inputs.column,
-        )
 
 if __name__ == "__main__":
     test()
