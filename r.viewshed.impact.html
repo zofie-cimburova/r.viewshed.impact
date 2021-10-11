@@ -71,7 +71,7 @@ sum of pixel values of the (weighted) (parametrised) cumulative
 viewshed. The resulting value is stored in an
 attribute table column of the input exposure source map
 (option <b>column</b>). In addion, the resulting visual impact maps
-created in step 3. can optionally be kept (flag <b>w</b>).
+created in step 3. can optionally be kept (flag <b>k</b>).
 
 <h3>Memory and parallel processing</h3>
 Option <b>memory</b> specifies the amount of memory allocated for
@@ -92,16 +92,68 @@ and larger number in <b>cores_e</b> in processing a dataset with larger
 polygons.
 
 <h2>EXAMPLES</h2>
-TODO
+Computation of visibility of geodetic points from urban areas in South-West Wake county,
+North Carolina. Input data are a terrain model, a vector map of geodetic points
+(exposure source) and a raster map of urban areas (weights) from NC dataset.
+Viewshed parametrisation function is set to Distance decay, exposure range
+is set to 500m.
+
+<div class="code"><pre>
+# set computation region to terrain model
+g.region raster=elevation@PERMANENT
+
+# copy vector maps of geodetic points to the current mapset
+g.copy vector=geodetic_swwake_pts@PERMANENT,geodetic_swwake_pts_local
+
+# calculate visibility of geodetic points from urban areas
+# keep the resulting visual impact maps
+r.viewshed.impact -k
+  exposure=geodetic_swwake_pts_local
+  column=visibility_urban
+  dsm=elevation@PERMANENT
+  weight=urban@PERMANENT
+  observer_elevation=1.5
+  range=500
+  function=Distance_decay
+  sample_density=100
+  seed=1
+  prefix=visual_impact_
+  cores_e=1
+  cores_i=4
+
+</pre></div>
+
+<div align="center" style="margin: 10px">
+<a href="r_viewshed_impact_example_overview.png">
+<img src="r_viewshed_impact_example_overview.png"
+width="595" height="782"
+alt="Example of r.viewshed.impact - visibility value" border="0">
+</a><br>
+<i>Example of r.viewshed.impact - visibility value</i>
+</div>
+
+<div align="center" style="margin: 10px">
+<a href="r_viewshed_impact_example_detail.png">
+<img src="r_viewshed_impact_example_detail.png"
+width="591" height="469"
+alt="Example of r.viewshed.impact - visibility impact map" border="0">
+</a><br>
+<i>Example of r.viewshed.impact - visibility impact map</i>
+</div>
 
 <h2>TODO</h2>
-TODO
+<ul>
+  <li>Implement variable exposure source height.</li>
+</ul>
 
 <h2>KNOWN ISSUES</h2>
-TODO
+
 
 <h2>REFERENCES</h2>
-TODO
+<ul>
+<li>Cimburova, Z., Blumentrath, S., Barton, D., 2021. PLACE TITLE HERE. Manuscript submitted for publication.
+</li>
+</ul>
 
 <h2>SEE ALSO</h2>
 <em>
