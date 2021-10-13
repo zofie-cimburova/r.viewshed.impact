@@ -740,7 +740,8 @@ def main():
     # EXPOSURE RANGE - COLUMN
     if options["range_column"] != "":
         info = grass.read_command(
-            "v.info", flags="c", map=v_src, layer=options["range_layer"], quiet=True).strip()
+            "v.info", flags="c", map=v_src, layer=options["range_layer"], quiet=True
+        ).strip()
         info_dict = dict(reversed(i.split("|")) for i in info.split("\n"))
 
         # check if column exists
