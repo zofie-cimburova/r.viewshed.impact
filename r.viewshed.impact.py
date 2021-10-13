@@ -318,6 +318,7 @@ def iteration(global_vars, src):
     # Get variables out of global_vars dictionary
     exp_range = global_vars["range"]
     v_src = global_vars["v_src"]
+    v_src_map = global_vars["v_src_map"]
     reg = global_vars["reg"]
     dsm = global_vars["dsm"]
     sample_density = global_vars["sample_density"]
@@ -349,7 +350,17 @@ def iteration(global_vars, src):
 
         sql_command = (
             "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=v_src, result_column=column, result=sum, cat=cat
+                table=v_src_map, result_column=column, result=sum, cat=cat
+            )
+        )
+        return sql_command
+
+    if range == 0.0:
+        sum = 0
+
+        sql_command = (
+            "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
+                table=v_src_map, result_column=column, result=sum, cat=cat
             )
         )
         return sql_command
@@ -406,7 +417,7 @@ def iteration(global_vars, src):
 
         sql_command = (
             "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=v_src, result_column=column, result=sum, cat=cat
+                table=v_src_map, result_column=column, result=sum, cat=cat
             )
         )
         return sql_command
@@ -433,7 +444,7 @@ def iteration(global_vars, src):
 
         sql_command = (
             "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-                table=v_src, result_column=column, result=sum, cat=cat
+                table=v_src_map, result_column=column, result=sum, cat=cat
             )
         )
         return sql_command
@@ -558,16 +569,16 @@ def iteration(global_vars, src):
         quiet=True,
     )["sum"]
 
-    if sum in [" nan", " -nan"]:
+    if sum in ["nan", "-nan"]:
         sum = 0.0
-    elif sum in [" inf", " -inf", " Inf", " -Inf"]:
+    elif sum in ["inf", "-inf", "Inf", "-Inf"]:
         return None
     else:
         sum = float(sum)
 
     sql_command = (
         "UPDATE {table} SET {result_column} = {result} WHERE cat = {cat}".format(
-            table=v_src, result_column=column, result=sum, cat=cat
+            table=v_src_map, result_column=column, result=sum, cat=cat
         )
     )
 
@@ -627,28 +638,37 @@ def main():
     # ==========================================================================
     # DSM
     dsm = options["dsm"]
+
     # check that the DSM exists
     gfile_dsm = grass.find_file(name=dsm, element="cell")
     if not gfile_dsm["file"]:
         grass.fatal("Raster map <%s> not found" % dsm)
 
     # EXPOSURE SOURCE VECTOR MAP
-    v_src = options["exposure"].split("@")[0]
-    mapset = options["exposure"].split("@")[1]
-
-    # check that the vector map is in current mapset
+    v_src_map = options["exposure"].split("@")[0]
     current_mapset = grass.read_command("g.mapset", flags="p").strip()
-    if mapset != current_mapset:
-        grass.fatal(
-            "Vector map <{}> must be stored in current mapset <{}>".format(
-                v_src, current_mapset
+
+    if "@" not in options["exposure"]:
+        # assuming current mapset
+        v_src_mapset = current_mapset
+    else:
+        v_src_mapset = options["exposure"].split("@")[1]
+
+        # check that the vector map is in current mapset
+        if v_src_mapset != current_mapset:
+            grass.fatal(
+                "Vector map <{}> must be stored in current mapset <{}>".format(
+                    v_src_map, current_mapset
+                )
             )
-        )
+    v_src = v_src_map + "@" + v_src_mapset
 
     # check that the vector map exists
-    gfile_source = grass.find_file(name=v_src, element="vector")
+    gfile_source = grass.find_file(
+        name=v_src_map, mapset=v_src_mapset, element="vector"
+    )
     if not gfile_source["file"]:
-        grass.fatal("Vector map <{}@{}> not found".format(v_src, mapset))
+        grass.fatal("Vector map <{}@{}> not found".format(v_src_map, v_src_mapset))
 
     # build topology of the vector map in case it got corrupted
     grass.run_command("v.build", map=v_src, quiet=True)
@@ -668,7 +688,7 @@ def main():
     #     grass.fatal("r.viewshed.impact cannot process map3d")
 
     # convert the vector map to pygrass VectorTopo object
-    v_src_topo = VectorTopo(v_src)
+    v_src_topo = VectorTopo(v_src_map, mapset=v_src_mapset)
     v_src_topo.open("r")
 
     # check that the weights map exists
@@ -679,10 +699,9 @@ def main():
             grass.fatal("Raster map <%s> not found" % weight)
 
     # COLUMN TO STORE OUTPUT VISUAL IMPACT VALUE
-
     # check whether the column name contains allowed characters
     # check whether the column already exists in attribute table
-    columns = grass.read_command("db.columns", table=v_src).strip().split("\n")
+    columns = grass.read_command("db.columns", table=v_src_map).strip().split("\n")
     column = options["column"]
 
     if not grass.legal_name(column):
@@ -720,8 +739,8 @@ def main():
     exp_range = options["range"]
     b_1 = options["b1"]
     if exp_range != "":
-        if float(exp_range) <= 0.0 and float(exp_range) != -1:
-            grass.fatal("Exposure range must be larger than 0.0.")
+        if float(exp_range) < 0.0 and float(exp_range) != -1:
+            grass.fatal("Exposure range must be larger or equal 0.0.")
 
         if float(exp_range) == -1 and function == "Fuzzy_viewshed":
             grass.fatal(
@@ -820,6 +839,7 @@ def main():
     global_vars = {
         "range": exp_range,
         "v_src": v_src,
+        "v_src_map": v_src_map,
         "reg": reg,
         "dsm": dsm,
         "sample_density": options["sample_density"],
