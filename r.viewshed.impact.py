@@ -35,11 +35,6 @@ for details.
 #% guidependency: range_layer, range_column
 #%end
 
-#%option G_OPT_V_FIELD
-#% key: range_layer
-#% guidependency: range_column
-#%end
-
 #%option
 #% key: column
 #% required: yes
@@ -74,6 +69,12 @@ for details.
 #% description: 0.0-
 #% options: 0.0-
 #% answer: 1.5
+#% guisection: Viewshed settings
+#%end
+
+#%option G_OPT_V_FIELD
+#% key: range_layer
+#% guidependency: range_column
 #% guisection: Viewshed settings
 #%end
 
@@ -752,7 +753,8 @@ def main():
 
     # EXPOSURE RANGE - COLUMN
     if options["range_column"] != "":
-        info = grass.read_command("v.info", flags="c", map=v_src, quiet=True).strip()
+        info = grass.read_command(
+            "v.info", flags="c", map=v_src, layer=options["range_layer"], quiet=True).strip()
         info_dict = dict(reversed(i.split("|")) for i in info.split("\n"))
 
         # check if column exists
