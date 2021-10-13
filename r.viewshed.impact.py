@@ -674,20 +674,6 @@ def main():
     # build topology of the vector map in case it got corrupted
     grass.run_command("v.build", map=v_src, quiet=True)
 
-    # check that the vector map contains only point, line and area features
-    # info = grass.read_command("v.info", map=v_src, flags="t").strip().split("\n")
-    # n_areas = int(info[5].split("=")[1])
-    # n_boundaries = int(info[3].split("=")[1])
-    # n_islands = int(info[6].split("=")[1])
-    # n_map3d = int(info[8].split("=")[1])
-
-    # if n_areas != n_boundaries:
-    #     grass.fatal("r.viewshed.impact cannot process boundaries")
-    # if n_areas != n_islands:
-    #     grass.fatal("r.viewshed.impact cannot process islands")
-    # if n_map3d > 0:
-    #     grass.fatal("r.viewshed.impact cannot process map3d")
-
     # convert the vector map to pygrass VectorTopo object
     v_src_topo = VectorTopo(v_src_map, mapset=v_src_mapset)
     v_src_topo.open("r")

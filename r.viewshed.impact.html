@@ -8,8 +8,8 @@ using parametrised (optional) cumulative viewshed analysis.
 
 <h3>The algorithm</h3>
 The processing workflow of the module consists of four steps that are
-repeated iteratively for each feature in the input
-exposure source vector map:
+repeated iteratively for each feature of the input
+exposure source vector map within the current computational region:
 <ol>
 <li>Random sampling of exposure source with vector points,</li>
 <li>Calculating parametrised (optional) cumulative viewshed
@@ -147,7 +147,10 @@ alt="Example of r.viewshed.impact - visibility impact map" border="0">
 </ul>
 
 <h2>KNOWN ISSUES</h2>
-
+<ul>
+  <li>Only areas with centroid within the computational region are processed.
+  Areas with centroid outside the computational region are skipped.</li>
+</ul>
 
 <h2>REFERENCES</h2>
 <ul>
