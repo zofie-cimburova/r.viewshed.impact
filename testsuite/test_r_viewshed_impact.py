@@ -63,9 +63,9 @@ class TestFunctions(TestCase):
         seed=50,
         # flags="ko",
         memory=5000,
-        cores_i=10,
+        cores_i=2,
         cores_e=2,
-        quiet=True,
+        verbose=True,
     )
 
     test_results_stats = {
