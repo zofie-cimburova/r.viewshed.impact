@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Checkout r.viewshed.exposure
-    - uses: actions/checkout@v2
+      uses: actions/checkout@v2
       with:
         repository: zofie-cimburova/r.viewshed.exposure
         token: ${{secrets.PAT}}
