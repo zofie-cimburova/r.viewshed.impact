@@ -11,6 +11,7 @@ jobs:
     - uses: actions/checkout@v1
     - name: Install GRASS GIS and other dependencies
       run: |
+        sudo deb http://ppa.launchpad.net/ubuntugis/ubuntugis-unstable/ubuntu focal main
         sudo apt-get update -qq
         sudo apt-get install -y -qq grass grass-dev grass-doc wget
     - name: Fix GRASS GIS installation for g.extension
@@ -22,9 +23,6 @@ jobs:
     - name: Create a temporary location
       run: |
         grass -c EPSG:4326 ~/grasstmploc -e
-    - name: Chanage shebang to Python3
-      run: |
-        sed -i s/python/python3/g r.viewshed.impact.py
     - name: Install the module
       run: |
         grass ~/grasstmploc/PERMANENT --exec g.extension extension=${{ github.event.repository.name }} url=. --verbose
