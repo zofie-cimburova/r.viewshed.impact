@@ -634,6 +634,11 @@ def iteration(global_vars, src):
 
 def main():
 
+    if not grass.find_program("r.viewshed.exposure"):
+        grass.fatal(_("r.viewshed.exposure module not found.\n"
+                     "Plese install it with:\n"
+                     "\"g.extension extension=r.viewshed.exposure\""))
+
     # ==========================================================================
     # Input data
     # ==========================================================================
