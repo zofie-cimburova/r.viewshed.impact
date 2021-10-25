@@ -31,7 +31,7 @@ jobs:
         grass -c EPSG:4326 ~/grasstmploc -e
     - name: Install the dependencies
       run: |
-        grass ~/grasstmploc/PERMANENT --exec g.extension extension=r.viewshed.exposure url=./addons/r.viewshed.exposure/ --verbose
+        grass ~/grasstmploc/PERMANENT --exec g.extension extension=r.viewshed.exposure url=addons/r.viewshed.exposure/ --verbose
     - name: Install the module
       run: |
         grass ~/grasstmploc/PERMANENT --exec g.extension extension=${{ github.event.repository.name }} url=. --verbose
