@@ -29,10 +29,12 @@ jobs:
     - name: Create a temporary location
       run: |
         grass -c EPSG:4326 ~/grasstmploc -e
-    - name: Install the modules
+    - name: Install the dependencies
+      run: |
+        grass ~/grasstmploc/PERMANENT --exec g.extension extension=r.viewshed.exposure url=./addons/r.viewshed.exposure/ --verbose
+    - name: Install the module
       run: |
         grass ~/grasstmploc/PERMANENT --exec g.extension extension=${{ github.event.repository.name }} url=. --verbose
-        grass ~/grasstmploc/PERMANENT --exec g.extension extension=r.viewshed.exposure url=./addons/r.viewshed.exposure/ --verbose
     - name: Cache data for testing
       id: cache-nc_spm_08_grass7
       uses: actions/cache@v1
