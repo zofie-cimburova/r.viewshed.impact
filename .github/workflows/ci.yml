@@ -9,6 +9,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+    - name: Checkout r.viewshed.exposure
+    - uses: actions/checkout@v2
+      with:
+        repository: zofie-cimburova/r.viewshed.exposure
+        token: ${{secrets.PAT}}
+        path: r.viewshed.exposure
     - name: Install GRASS GIS and other dependencies
       run: |
         sudo add-apt-repository ppa:ubuntugis/ubuntugis-unstable
@@ -23,9 +29,10 @@ jobs:
     - name: Create a temporary location
       run: |
         grass -c EPSG:4326 ~/grasstmploc -e
-    - name: Install the module
+    - name: Install the modules
       run: |
         grass ~/grasstmploc/PERMANENT --exec g.extension extension=${{ github.event.repository.name }} url=. --verbose
+        grass ~/grasstmploc/PERMANENT --exec g.extension extension=r.viewshed.exposure url=./r.viewshed.exposure --verbose
     - name: Cache data for testing
       id: cache-nc_spm_08_grass7
       uses: actions/cache@v1
