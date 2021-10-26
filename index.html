@@ -1,7 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>GRASS GIS Manual: r.viewshed.impact</title>
+<title>r.viewshed.impact - GRASS GIS manual</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <link rel="stylesheet" href="grassdocs.css" type="text/css">
 </head>
@@ -10,8 +10,136 @@
 
 <a href="file:///usr/lib/grass78/docs/html/index.html"><img src="grass_logo.png" alt="GRASS logo"></a>
 <hr class="header">
+
 <h2>NAME</h2>
-<em><b>r.viewshed.impact</b></em>
+<em><b>r.viewshed.impact</b></em>  - Visual impact of defined exposure source<BR>
+Computes visual impact of defined exposure source using weighted parametrised viewshed analysis
+<h2>KEYWORDS</h2>
+<a href="file:///usr/lib/grass78/docs/html/raster.html">raster</a>, <a href="file:///usr/lib/grass78/docs/html/topic_viewshed.html">viewshed</a>, <a href="file:///usr/lib/grass78/docs/html/keywords.html#line of sight">line of sight</a>, <a href="file:///usr/lib/grass78/docs/html/keywords.html#LOS">LOS</a>, <a href="file:///usr/lib/grass78/docs/html/keywords.html#exposure">exposure</a>, <a href="file:///usr/lib/grass78/docs/html/keywords.html#impact">impact</a>
+<h2>SYNOPSIS</h2>
+<div id="name"><b>r.viewshed.impact</b><br></div>
+<b>r.viewshed.impact --help</b><br>
+<div id="synopsis"><b>r.viewshed.impact</b> [-<b>crkoa</b>] <b>exposure</b>=<em>name</em> <b>column</b>=<em>string</em> <b>dsm</b>=<em>name</em>  [<b>weight</b>=<em>name</em>]   [<b>observer_elevation</b>=<em>value</em>]   [<b>range_layer</b>=<em>string</em>]   [<b>range_column</b>=<em>name</em>]   [<b>range</b>=<em>value</em>]   [<b>function</b>=<em>name</em>]   [<b>b1</b>=<em>value</em>]   [<b>sample_density</b>=<em>value</em>]   [<b>seed</b>=<em>value</em>]   [<b>refraction_coefficient</b>=<em>value</em>]   [<b>prefix</b>=<em>string</em>]   [<b>memory</b>=<em>value</em>]   [<b>cores_e</b>=<em>value</em>]   [<b>cores_i</b>=<em>value</em>]   [--<b>help</b>]  [--<b>verbose</b>]  [--<b>quiet</b>]  [--<b>ui</b>] 
+</div>
+
+<div id="flags">
+<h3>Flags:</h3>
+<dl>
+<dt><b>-c</b></dt>
+<dd>Consider the curvature of the earth (current ellipsoid)</dd>
+
+<dt><b>-r</b></dt>
+<dd>Consider the effect of atmospheric refraction in viewshed modelling</dd>
+
+<dt><b>-k</b></dt>
+<dd>Keep intermediate visual impact maps</dd>
+
+<dt><b>-o</b></dt>
+<dd>Allow intermediate visual impact maps to overwrite existing files</dd>
+
+<dt><b>-a</b></dt>
+<dd>Allow overwriting column storing visual impact values</dd>
+
+<dt><b>--help</b></dt>
+<dd>Print usage summary</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+<dt><b>--ui</b></dt>
+<dd>Force launching GUI dialog</dd>
+</dl>
+</div>
+
+<div id="parameters">
+<h3>Parameters:</h3>
+<dl>
+<dt><b>exposure</b>=<em>name</em>&nbsp;<b>[required]</b></dt>
+<dd>Name of input map of exposure source locations</dd>
+<dd>Or data source for direct OGR access</dd>
+
+<dt><b>column</b>=<em>string</em>&nbsp;<b>[required]</b></dt>
+<dd>Name of attribute column to store visual impact values</dd>
+
+<dt><b>dsm</b>=<em>name</em>&nbsp;<b>[required]</b></dt>
+<dd>Name of input digital surface raster map</dd>
+<dd>Name of input raster map</dd>
+
+<dt><b>weight</b>=<em>name</em></dt>
+<dd>Name of input weights raster map</dd>
+<dd>Name of input raster map</dd>
+
+<dt><b>observer_elevation</b>=<em>value</em></dt>
+<dd>Observer elevation above the ground</dd>
+<dd>0.0-</dd>
+<dd>Options: <em>0.0-</em></dd>
+<dd>Default: <em>1.5</em></dd>
+
+<dt><b>range_layer</b>=<em>string</em></dt>
+<dd>Layer number or name</dd>
+<dd>Vector features can have category values in different layers. This number determines which layer to use. When used with direct OGR access this is the layer name.</dd>
+<dd>Default: <em>1</em></dd>
+
+<dt><b>range_column</b>=<em>name</em></dt>
+<dd>Name of attribute column containing exposure range</dd>
+<dd>Name of attribute column</dd>
+
+<dt><b>range</b>=<em>value</em></dt>
+<dd>Maximum exposure range</dd>
+<dd>0.0- , -1 for infinity</dd>
+<dd>Options: <em>0.0-</em></dd>
+
+<dt><b>function</b>=<em>name</em></dt>
+<dd>Viewshed parametrisation function</dd>
+<dd>None, Binary, Distance_decay, Fuzzy_viewshed, Visual_magnitude, Solid_angle</dd>
+<dd>Options: <em>None,  Binary,  Distance_decay,  Fuzzy_viewshed,  Visual_magnitude,  Solid_angle</em></dd>
+<dd>Default: <em>Distance_decay</em></dd>
+
+<dt><b>b1</b>=<em>value</em></dt>
+<dd>Radius around the observer where clarity is perfect. Used in fuzzy viewshed function.</dd>
+<dd>Default: <em>10</em></dd>
+
+<dt><b>sample_density</b>=<em>value</em></dt>
+<dd>Density of sampling points</dd>
+<dd>0.0-100.0</dd>
+<dd>Options: <em>0.0-100.0</em></dd>
+<dd>Default: <em>25</em></dd>
+
+<dt><b>seed</b>=<em>value</em></dt>
+<dd>Random seed, default [random]</dd>
+<dd>0-</dd>
+<dd>Options: <em>0-</em></dd>
+
+<dt><b>refraction_coefficient</b>=<em>value</em></dt>
+<dd>Refraction coefficient</dd>
+<dd>0.0-1.0</dd>
+<dd>Options: <em>0.0-1.0</em></dd>
+<dd>Default: <em>0.14286</em></dd>
+
+<dt><b>prefix</b>=<em>string</em></dt>
+<dd>Prefix for intermediate visual impact maps</dd>
+<dd>Default: <em>visual_impact_</em></dd>
+
+<dt><b>memory</b>=<em>value</em></dt>
+<dd>Amount of memory to use in MB</dd>
+<dd>1-</dd>
+<dd>Options: <em>1-</em></dd>
+<dd>Default: <em>500</em></dd>
+
+<dt><b>cores_e</b>=<em>value</em></dt>
+<dd>Number of cores to parallelise r.viewshed.exposure</dd>
+<dd>1-</dd>
+<dd>Options: <em>1-</em></dd>
+<dd>Default: <em>1</em></dd>
+
+<dt><b>cores_i</b>=<em>value</em></dt>
+<dd>Number of cores to parallelise r.viewshed.impact</dd>
+<dd>1-</dd>
+<dd>Options: <em>1-</em></dd>
+<dd>Default: <em>1</em></dd>
+
+</dl>
+</div>
 <div class="toc">
 <h4 class="toc">Table of contents</h4>
 <ul class="toc">
@@ -199,7 +327,7 @@ alt="Example of r.viewshed.impact - visibility impact map" border="0">
 <h2><a name="authors">AUTHORS</a></h2>
 Zofie Cimburova, <a href="https://www.nina.no">NINA</a><br>
 Stefan Blumentrath, <a href="https://www.nina.no">NINA</a><h2>SOURCE CODE</h2>
-<p>Available at: <a href="https://trac.osgeo.org/grass/browser/grass-addons/grass7/raster/r.viewshed.impact">r.viewshed.impact source code</a> (<a href="https://trac.osgeo.org/grass/browser/grass-addons/grass7/raster/r.viewshed.impact">history</a>)</p>
+<p>Available at: <a href="file:///usr/lib/grass78/docs/html//home/runner/work/r.viewshed.impact/r.viewshed.impactraster/r.viewshed.impact">r.viewshed.impact source code</a> (<a href="file:///usr/lib/grass78/docs/html//home/runner/work/r.viewshed.impact/r.viewshed.impactraster/r.viewshed.impact">history</a>)</p>
 <hr class="header">
 <p>
 <a href="file:///usr/lib/grass78/docs/html/index.html">Main index</a> |
@@ -210,9 +338,9 @@ Stefan Blumentrath, <a href="https://www.nina.no">NINA</a><h2>SOURCE CODE</h2>
 <a href="file:///usr/lib/grass78/docs/html/full_index.html">Full index</a>
 </p>
 <p>
-&copy; 2003-2019
+&copy; 2003-2021
 <a href="http://grass.osgeo.org">GRASS Development Team</a>,
-GRASS GIS 7.8.2 Reference Manual
+GRASS GIS 7.8.6 Reference Manual
 </p>
 
 </div>
