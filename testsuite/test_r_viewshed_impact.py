@@ -33,6 +33,11 @@ class TestFunctions(TestCase):
     weight = "aspect@PERMANENT"
     dsm = "elev_ned_30m@PERMANENT"
 
+    # Check availability of r.viewshed.exposure and install it if missing
+    # Assumes r.viewshed.exposure is part of the official repository
+    if not gs.find_program("r.viewshed.exposure"):
+        gs.run_command("g.extension", extension="r.viewshed.exposure")
+
     # copy exposure maps locally
     source_points_local = "schools_wake_local"
     source_lines_local = "roadsmajor_local"
@@ -58,9 +63,9 @@ class TestFunctions(TestCase):
         seed=50,
         # flags="ko",
         memory=5000,
-        cores_i=10,
+        cores_i=2,
         cores_e=2,
-        quiet=True,
+        verbose=True,
     )
 
     test_results_stats = {
