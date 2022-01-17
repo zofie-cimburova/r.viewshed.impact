@@ -7,15 +7,14 @@ AUTHOR(S):    Zofie Cimburova, Stefan Blumentrath
 
 PURPOSE:      Computes visual impact of defined exposure source using weighted parametrised viewshed analysis
 
-COPYRIGHT:    (C) 2021 by Zofie Cimburova, Stefan Blumentrath, and the GRASS Development Team
+COPYRIGHT:    (C) 2022 by Zofie Cimburova, Stefan Blumentrath, and the GRASS Development Team
 
-REFERENCES:   TODO reference papers used and the paper to be published
+REFERENCES:   Cimburova, Z., Blumentrath, S., Barton, D., 2022. Making trees visible: a GIS method and tool for modelling visibility in valuation of urban trees. Manuscript submitted for publication.
 
 This program is free software under the GNU General Public
 License (>=v2). Read the file COPYING that comes with GRASS
 for details.
 """
-# python3 /home/NINA.NO/zofie.cimburova/PhD/Paper4/SRC/r.viewshed.impact.py
 
 #%module
 #% label: Visual impact of defined exposure source
