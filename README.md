@@ -7,6 +7,8 @@
 
 # r.viewshed.impact
 
+Work in progress.
+
 ## Manual
 
 The manual of the module is available at:
@@ -14,10 +16,7 @@ https://zofie-cimburova.github.io/r.viewshed.impact/
 
 ## Installation
 
-In GRASS GIS (>= 7.8) run:
-```
-g.extension extension=r.viewshed.impact url=https://github.com/zofie-cimburova/r.viewshed.impact/
-```
+The addon is yet to be submitted to GRASS GIS Addon Repository.
 
 ## How to contribute to this repository
 
