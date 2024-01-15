@@ -492,7 +492,7 @@ def iteration(global_vars, src):
     r_exposure = "{}_{}_exposure".format(TEMPNAME, cat)
     grass.run_command(
         "r.viewshed.exposure",
-        dsm=dsm,
+        input=dsm,
         output=r_exposure,
         sampling_points=v_sample,
         observer_elevation=float(observer_elevation),
@@ -502,7 +502,7 @@ def iteration(global_vars, src):
         refraction_coeff=float(refr_coeff),
         seed=seed,
         memory=int(memory),
-        cores=int(cores),
+        nprocs=int(cores),
         flags=flagstring,
         overwrite=True,
         quiet=True,
